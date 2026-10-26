@@ -1,12 +1,17 @@
 import { api } from './api.js';
 import { store } from './util.js';
+import { ScAudio, SC_PREFIX } from './soundcloud.js';
 
 const REPEAT_MODES = ['off', 'all', 'one'];
 
 class Player extends EventTarget {
-  constructor(audio) {
+  // html — обычный <audio> для наших треков, sc — плеер SoundCloud
+  constructor(html, sc) {
     super();
-    this.audio = audio;
+    this.engines = [html, sc];
+    this.html = html;
+    this.sc = sc;
+    this.active = html;
     this.queue = [];
     this.original = null; // порядок до перемешивания
     this.index = -1;
@@ -19,15 +24,28 @@ class Player extends EventTarget {
     const saved = store('player') || {};
     this.shuffle = !!saved.shuffle;
     this.repeat = REPEAT_MODES.includes(saved.repeat) ? saved.repeat : 'off';
-    audio.volume = typeof saved.volume === 'number' ? saved.volume : 0.8;
-    audio.muted = !!saved.muted;
+    for (const e of this.engines) {
+      e.volume = typeof saved.volume === 'number' ? saved.volume : 0.8;
+      e.muted = !!saved.muted;
+      this.bind(e);
+    }
+    this.setupMediaSession();
+  }
 
-    audio.addEventListener('play', () => this.emit('state'));
-    audio.addEventListener('pause', () => { this.emit('state'); this.save(); });
-    audio.addEventListener('volumechange', () => { this.emit('volume'); this.save(); });
-    audio.addEventListener('loadedmetadata', () => this.emit('time'));
-    audio.addEventListener('progress', () => this.emit('time'));
-    audio.addEventListener('timeupdate', () => {
+  // Текущий движок воспроизведения: у обоих одинаковый интерфейс
+  get audio() {
+    return this.active;
+  }
+
+  bind(audio) {
+    const on = (type, fn) => audio.addEventListener(type, (e) => { if (audio === this.active) fn(e); });
+    on('play', () => this.emit('state'));
+    on('pause', () => { this.emit('state'); this.save(); });
+    on('volumechange', () => { this.emit('volume'); this.save(); });
+    on('loadedmetadata', () => this.emit('time'));
+    on('progress', () => this.emit('time'));
+    on('needgesture', () => this.emit('needgesture'));
+    on('timeupdate', () => {
       this.emit('time');
       if (!this.counted && audio.currentTime > 10 && this.current) {
         this.counted = true;
@@ -35,7 +53,7 @@ class Player extends EventTarget {
       }
       if (Date.now() - this.savedAt > 5000) this.save();
     });
-    audio.addEventListener('ended', () => {
+    on('ended', () => {
       if (this.repeat === 'one') {
         audio.currentTime = 0;
         audio.play();
@@ -43,10 +61,9 @@ class Player extends EventTarget {
         this.next(true);
       }
     });
-    audio.addEventListener('error', () => {
+    on('error', () => {
       if (this.current) this.emit('error');
     });
-    this.setupMediaSession();
   }
 
   emit(type) {
@@ -79,6 +96,9 @@ class Player extends EventTarget {
     const track = this.current;
     if (!track) return;
     this.counted = false;
+    const engine = String(track.stream).startsWith(SC_PREFIX) ? this.sc : this.html;
+    if (engine !== this.active) this.active.pause();
+    this.active = engine;
     this.audio.src = track.stream;
     if (position) {
       this.audio.addEventListener('loadedmetadata', () => { this.audio.currentTime = position; }, { once: true });
@@ -168,12 +188,15 @@ class Player extends EventTarget {
   }
 
   setVolume(v) {
-    this.audio.volume = Math.max(0, Math.min(1, v));
-    if (v > 0) this.audio.muted = false;
+    for (const e of this.engines) {
+      e.volume = Math.max(0, Math.min(1, v));
+      if (v > 0) e.muted = false;
+    }
   }
 
   toggleMute() {
-    this.audio.muted = !this.audio.muted;
+    const muted = !this.audio.muted;
+    for (const e of this.engines) e.muted = muted;
   }
 
   // Обновить данные трека (например, лайк) во всей очереди
@@ -225,7 +248,7 @@ class Player extends EventTarget {
     for (const [action, fn] of Object.entries(handlers)) {
       try { ms.setActionHandler(action, fn); } catch { /* действие не поддерживается */ }
     }
-    this.audio.addEventListener('timeupdate', () => {
+    this.addEventListener('time', () => {
       const d = this.duration;
       if (!d || !ms.setPositionState) return;
       try {
@@ -246,4 +269,4 @@ class Player extends EventTarget {
   }
 }
 
-export const player = new Player(document.getElementById('audio'));
+export const player = new Player(document.getElementById('audio'), new ScAudio(document.getElementById('sc-holder')));

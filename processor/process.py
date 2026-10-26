@@ -446,7 +446,9 @@ def recensor(limit=3):
     из звука и прячем их в названии и тексте."""
     state = load_state()
     done = set(state.get("checked", [])) if state.get("version") == WORDS_VERSION else set()
-    rows = db("GET", "tracks?select=id,title,artist,album,lyrics,audio_path,censored&status=eq.ready&order=published_at.asc") or []
+    # треки SoundCloud играют из их плеера — их звук мы не меняем
+    rows = db("GET", "tracks?select=id,title,artist,album,lyrics,audio_path,censored&status=eq.ready"
+                     "&audio_path=not.like.soundcloud*&order=published_at.asc") or []
     todo = [t for t in rows if t["id"] not in done][:limit]
     for t in todo:
         print(f"Перепроверка по новому словарю: «{t['artist']} — {t['title']}»", flush=True)
@@ -527,8 +529,9 @@ def main():
     db("PATCH", "tracks?status=eq.processing&processing_started=lt."
        + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3 * 3600)), {"status": "pending"})
 
-    # заявки на генерацию (*.gen) сначала обрабатывает generate.py
-    queue = db("GET", f"tracks?status=eq.pending&source_path=not.like.*.gen&order=created_at.asc&limit={MAX_TRACKS}") or []
+    # заявки на генерацию (*.gen) и ссылки SoundCloud (*.sc) обрабатываются отдельно
+    queue = db("GET", f"tracks?status=eq.pending&source_path=not.like.*.gen&source_path=not.like.*.sc"
+                      f"&order=created_at.asc&limit={MAX_TRACKS}") or []
     print(f"В очереди: {len(queue)}", flush=True)
     done = failed = 0
     for track in queue:

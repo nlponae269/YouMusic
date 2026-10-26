@@ -26,7 +26,7 @@ try:
     except urllib.error.HTTPError:
         state = {}
     checked = set(state.get("checked", [])) if state.get("version") == VERSION else set()
-    ready = {r["id"] for r in get("/rest/v1/tracks?select=id&status=eq.ready")}
+    ready = {r["id"] for r in get("/rest/v1/tracks?select=id&status=eq.ready&audio_path=not.like.soundcloud*")}
     print("yes" if ready - checked else "no")
 except Exception as err:  # noqa: BLE001
     print(f"no  # ошибка проверки: {err}", file=sys.stderr)

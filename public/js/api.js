@@ -13,6 +13,12 @@ function publicUrl(key) {
   return `${URL_BASE}/storage/v1/object/public/tracks/${key}`;
 }
 
+// обложка из нашего хранилища или внешняя (у треков SoundCloud)
+function mediaUrl(key) {
+  if (!key) return null;
+  return /^https:\/\//.test(key) ? key : publicUrl(key);
+}
+
 function load(key, fallback) {
   try {
     return JSON.parse(localStorage.getItem(`ym:${key}`)) ?? fallback;
@@ -65,8 +71,10 @@ function view(t, likes) {
     liked: likes.includes(t.id),
     hasLyrics: !!t.has_lyrics,
     uploader: t.uploader || null,
-    cover: t.cover_path ? publicUrl(t.cover_path) : null,
-    stream: publicUrl(t.audio_path),
+    cover: mediaUrl(t.cover_path),
+    // треки SoundCloud: «soundcloud:<ссылка>», играют через их плеер
+    stream: t.audio_path?.startsWith('soundcloud:') ? t.audio_path : publicUrl(t.audio_path),
+    soundcloud: t.audio_path?.startsWith('soundcloud:') ? t.audio_path.slice(11) : null,
   };
 }
 
@@ -292,7 +300,7 @@ export const account = {
       .select('id,title,artist,album,status,error,censored,cover_path,color,uploader,source_path,created_at')
       .order('created_at', { ascending: false }).limit(200);
     if (!all) q = q.eq('owner', user.id);
-    return check(await q).map((t) => ({ ...t, cover: t.cover_path ? publicUrl(t.cover_path) : null }));
+    return check(await q).map((t) => ({ ...t, cover: mediaUrl(t.cover_path) }));
   },
 
   async deleteTrack(id) {
@@ -317,6 +325,32 @@ export const account = {
       title: title.trim().slice(0, 200),
       artist: artist.trim().slice(0, 200),
       album: AI_ALBUM,
+      source_path: sourcePath,
+      uploader: this.nickname(session.user).slice(0, 60),
+    }));
+    return id;
+  },
+
+  // Трек с SoundCloud: ссылка — JSON-файлом в incoming; обработчик возьмёт название
+  // и обложку через официальный oEmbed SoundCloud и опубликует трек
+  async requestSoundcloud(url) {
+    let u;
+    try { u = new URL(url); } catch { throw new Error('Это не ссылка'); }
+    if (!/(^|\.)soundcloud\.com$/.test(u.hostname) && u.hostname !== 'on.soundcloud.com' && u.hostname !== 'snd.sc') {
+      throw new Error('Нужна ссылка на soundcloud.com');
+    }
+    if (u.pathname.includes('/sets/')) throw new Error('Это плейлист — нужна ссылка на один трек');
+    const { data } = await sb.auth.getSession();
+    const session = data.session;
+    if (!session) throw new Error('Войдите в аккаунт');
+    const id = newId();
+    const sourcePath = `${session.user.id}/${id}.sc`;
+    await putIncoming(session, sourcePath, new Blob([JSON.stringify({ url: u.href })]), 'audio/x-youmusic-request');
+    check(await sb.from('tracks').insert({
+      id,
+      title: 'Трек с SoundCloud',
+      artist: 'SoundCloud',
+      album: 'SoundCloud',
       source_path: sourcePath,
       uploader: this.nickname(session.user).slice(0, 60),
     }));

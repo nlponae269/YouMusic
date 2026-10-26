@@ -1,6 +1,6 @@
 // Кэшируем только оболочку приложения; музыка и каталог всегда идут в сеть
-const CACHE = 'youmusic-shell-v7';
-const SHELL = ['./', 'styles.css', 'config.js', 'js/app.js', 'js/api.js', 'js/player.js', 'js/util.js', 'js/account.js', 'js/tags.js', 'js/create.js', 'icon.svg', 'manifest.webmanifest'];
+const CACHE = 'youmusic-shell-v8';
+const SHELL = ['./', 'styles.css', 'config.js', 'js/app.js', 'js/api.js', 'js/player.js', 'js/util.js', 'js/account.js', 'js/tags.js', 'js/create.js', 'js/soundcloud.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

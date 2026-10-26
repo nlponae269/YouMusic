@@ -73,6 +73,12 @@ function renderTrack() {
   els.miniTitle.textContent = t.title;
   els.miniArtist.textContent = t.artist;
   els.lyrics.disabled = !t.hasLyrics;
+  // треки SoundCloud играют в их плеере; скачать их нельзя
+  const sc = !!t.soundcloud;
+  els.player.classList.toggle('is-sc', sc);
+  els.download.disabled = sc;
+  $('#sc-link').hidden = !sc;
+  if (sc) $('#sc-link').href = t.soundcloud;
   document.title = `${t.artist} — ${t.title} · YouMusic`;
   applyPalette(t.color);
   renderLike();
@@ -209,6 +215,11 @@ player.addEventListener('time', renderTime);
 player.addEventListener('mode', renderMode);
 player.addEventListener('volume', renderVolume);
 player.addEventListener('error', () => toast('Не удалось загрузить трек'));
+// на телефонах SoundCloud иногда требует нажать ▶ внутри своего плеера
+player.addEventListener('needgesture', () => {
+  openPlayer();
+  toast('Нажми ▶ в плеере SoundCloud');
+});
 
 els.play.addEventListener('click', () => player.toggle());
 els.miniPlay.addEventListener('click', () => player.toggle());
@@ -330,7 +341,7 @@ function trackRows(key, tracks, { removable = false } = {}) {
       </span>
       <span class="row__meta">
         <span class="row__title">${esc(t.title)}</span>
-        <span class="row__artist">${esc(t.artist)}</span>
+        <span class="row__artist">${t.soundcloud ? '<span class="badge">SoundCloud</span>' : ''}${esc(t.artist)}</span>
       </span>
       <span class="row__time">${fmtTime(t.duration)}</span>
       <span class="row__actions">
