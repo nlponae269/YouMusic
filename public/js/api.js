@@ -1,15 +1,16 @@
-// «Бэкенд» без сервера: каталог (catalog.json) и музыка лежат рядом с сайтом на GitHub Pages,
+// Данные сайта: каталог, аккаунты и загрузки — в Supabase (бесплатный тариф),
 // лайки, плейлисты и счётчики прослушиваний — в памяти браузера.
 
-const CATALOG = 'catalog.json';
+const URL_BASE = String(window.YOUMUSIC_SUPABASE_URL || '').replace(/\/$/, '');
+const ANON_KEY = window.YOUMUSIC_SUPABASE_KEY || '';
 
-// Ссылка, куда загружать музыку в репозитории (config.js генерируется при сборке)
-export const uploadUrl = window.YOUMUSIC_REPO
-  ? `https://github.com/${window.YOUMUSIC_REPO}/upload/${window.YOUMUSIC_BRANCH || 'main'}/music`
-  : null;
+export const configured = !!(URL_BASE && ANON_KEY && window.supabase);
+export const sb = configured ? window.supabase.createClient(URL_BASE, ANON_KEY) : null;
 
-function mediaUrl(key) {
-  return new URL(key, document.baseURI).href;
+export const MAX_UPLOAD = 50 * 1024 * 1024;
+
+function publicUrl(key) {
+  return `${URL_BASE}/storage/v1/object/public/tracks/${key}`;
 }
 
 function load(key, fallback) {
@@ -26,25 +27,30 @@ function save(key, value) {
   } catch { /* хранилище браузера недоступно */ }
 }
 
+function check({ data, error }) {
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/* ---------- Каталог ---------- */
+
+const TRACK_COLUMNS = 'id,title,artist,album,duration,color,peaks,has_lyrics,audio_path,cover_path,uploader,published_at';
 let catalogPromise = null;
-let isDemo = false;
 let catalogAt = 0;
 
 async function catalog() {
-  // перечитываем каталог не чаще раза в минуту
+  if (!configured) return [];
   if (!catalogPromise || Date.now() - catalogAt > 60_000) {
     catalogAt = Date.now();
-    catalogPromise = (async () => {
-      const res = await fetch(CATALOG, { cache: 'no-cache' });
-      if (res.status === 404) return [];
-      if (!res.ok) throw new Error(`Не удалось загрузить каталог (${res.status})`);
-      const data = await res.json();
-      isDemo = !!data.demo;
-      return Array.isArray(data.tracks) ? data.tracks : [];
-    })();
+    catalogPromise = sb.from('tracks').select(TRACK_COLUMNS).eq('status', 'ready')
+      .order('published_at', { ascending: true }).limit(5000).then(check);
     catalogPromise.catch(() => { catalogPromise = null; });
   }
   return catalogPromise;
+}
+
+export function refreshCatalog() {
+  catalogPromise = null;
 }
 
 function view(t, likes) {
@@ -57,9 +63,10 @@ function view(t, likes) {
     color: t.color || '#7a5cff',
     peaks: t.peaks || null,
     liked: likes.includes(t.id),
-    hasLyrics: !!t.lyrics,
-    cover: t.cover ? mediaUrl(t.cover) : null,
-    stream: mediaUrl(t.audio),
+    hasLyrics: !!t.has_lyrics,
+    uploader: t.uploader || null,
+    cover: t.cover_path ? publicUrl(t.cover_path) : null,
+    stream: publicUrl(t.audio_path),
   };
 }
 
@@ -119,7 +126,6 @@ export const api = {
       popular: popular.slice(0, 30),
       liked: likes.map((id) => map.get(id)).filter(Boolean),
       playlists: load('playlists', []).map((p) => playlistSummary(p, map)),
-      demo: isDemo,
       nextRefresh: (Math.floor(Date.now() / 3_600_000) + 1) * 3_600_000,
     };
   },
@@ -128,12 +134,12 @@ export const api = {
     const tracks = (await tracksView()).reverse();
     const query = q.trim().toLowerCase();
     if (!query) return tracks.slice(0, 100);
-    return tracks.filter((t) => `${t.artist} ${t.title} ${t.album || ''}`.toLowerCase().includes(query));
+    return tracks.filter((t) => `${t.artist} ${t.title} ${t.album || ''} ${t.uploader || ''}`.toLowerCase().includes(query));
   },
 
   async lyrics(id) {
-    const t = (await catalog()).find((x) => x.id === id);
-    return { lyrics: t?.lyrics || '' };
+    const rows = check(await sb.from('tracks').select('lyrics').eq('id', id).limit(1));
+    return { lyrics: rows[0]?.lyrics || '' };
   },
 
   async played(id) {
@@ -198,5 +204,121 @@ export const api = {
     const { lists, p } = findPlaylist(id);
     p.tracks = p.tracks.filter((t) => t !== trackId);
     save('playlists', lists);
+  },
+};
+
+/* ---------- Аккаунт ---------- */
+
+const AUTH_ERRORS = {
+  'Invalid login credentials': 'Неверная почта или пароль',
+  'User already registered': 'Такая почта уже зарегистрирована',
+  'Email not confirmed': 'Подтвердите почту — ссылка в письме',
+  'Password should be at least 6 characters.': 'Пароль — минимум 6 символов',
+};
+
+function authCheck({ data, error }) {
+  if (error) throw new Error(AUTH_ERRORS[error.message] || error.message);
+  return data;
+}
+
+export const account = {
+  async user() {
+    if (!configured) return null;
+    const { data } = await sb.auth.getSession();
+    return data.session?.user || null;
+  },
+
+  nickname(user) {
+    return user?.user_metadata?.nickname || user?.email?.split('@')[0] || 'Гость';
+  },
+
+  async signUp(email, password, nickname) {
+    const data = authCheck(await sb.auth.signUp({
+      email,
+      password,
+      options: { data: { nickname }, emailRedirectTo: location.href.split('#')[0] },
+    }));
+    return { needsConfirm: !data.session };
+  },
+
+  async signIn(email, password) {
+    authCheck(await sb.auth.signInWithPassword({ email, password }));
+  },
+
+  async signOut() {
+    await sb.auth.signOut();
+  },
+
+  onChange(fn) {
+    if (configured) sb.auth.onAuthStateChange(() => fn());
+  },
+
+  async isAdmin() {
+    const { data } = await sb.rpc('is_admin');
+    return !!data;
+  },
+
+  async myTracks(all = false) {
+    const user = await this.user();
+    let q = sb.from('tracks')
+      .select('id,title,artist,status,error,censored,cover_path,color,uploader,created_at')
+      .order('created_at', { ascending: false }).limit(200);
+    if (!all) q = q.eq('owner', user.id);
+    return check(await q).map((t) => ({ ...t, cover: t.cover_path ? publicUrl(t.cover_path) : null }));
+  },
+
+  async deleteTrack(id) {
+    check(await sb.from('tracks').delete().eq('id', id));
+    refreshCatalog();
+  },
+
+  // Файл → приватный бакет incoming (с прогрессом), затем строка в очередь модерации
+  async upload({ file, cover, title, artist, album, lyrics }, onProgress) {
+    const { data } = await sb.auth.getSession();
+    const session = data.session;
+    if (!session) throw new Error('Войдите в аккаунт');
+    if (file.size > MAX_UPLOAD) throw new Error('Файл больше 50 МБ');
+    const uid = session.user.id;
+    const id = newId();
+    const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp3';
+    const sourcePath = `${uid}/${id}.${ext}`;
+
+    const put = (path, body, type, progress) => new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${URL_BASE}/storage/v1/object/incoming/${path}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+      xhr.setRequestHeader('apikey', ANON_KEY);
+      xhr.setRequestHeader('Content-Type', type || 'application/octet-stream');
+      xhr.setRequestHeader('x-upsert', 'false');
+      if (progress) xhr.upload.onprogress = (e) => e.lengthComputable && progress(e.loaded / e.total);
+      xhr.onload = () => {
+        if (xhr.status < 300) return resolve();
+        let msg = `Ошибка загрузки (${xhr.status})`;
+        try { msg = JSON.parse(xhr.responseText).message || msg; } catch { /* не JSON */ }
+        reject(new Error(msg));
+      };
+      xhr.onerror = () => reject(new Error('Нет связи с сервером'));
+      xhr.send(body);
+    });
+
+    await put(sourcePath, file, file.type || 'audio/mpeg', onProgress);
+    let coverPath = null;
+    if (cover) {
+      const cext = { 'image/png': 'png', 'image/webp': 'webp' }[cover.type] || 'jpg';
+      coverPath = `${uid}/${id}.cover.${cext}`;
+      await put(coverPath, cover, cover.type || 'image/jpeg');
+    }
+    const user = session.user;
+    check(await sb.from('tracks').insert({
+      id,
+      title: title.trim().slice(0, 200),
+      artist: artist.trim().slice(0, 200),
+      album: album?.trim().slice(0, 200) || null,
+      lyrics: lyrics?.trim().slice(0, 20000) || null,
+      source_path: sourcePath,
+      cover_source: coverPath,
+      uploader: this.nickname(user).slice(0, 60),
+    }));
+    return id;
   },
 };

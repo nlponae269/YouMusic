@@ -5,3 +5,6 @@ node_modules/
 deploy/.state.env
 deploy/yandex-ca.pem
 _site/
+_site.sources.json
+.moderation-cache/
+__pycache__/

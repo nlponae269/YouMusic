@@ -1,0 +1,5 @@
+# torch и torchaudio ставятся отдельно (CPU-сборка): см. .github/workflows/process.yml
+demucs==4.1.0
+faster-whisper==1.2.1
+soundfile==0.13.1
+numpy<2.3

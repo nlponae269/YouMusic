@@ -1,4 +1,5 @@
-import { api, uploadUrl } from './api.js';
+import { api, configured } from './api.js';
+import { viewAccount, mountAccount } from './account.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
 
@@ -639,8 +640,9 @@ async function viewHome() {
   feed = await api.feed();
   if (!feed.wave.length) {
     return emptyState('wave', 'Здесь пока тихо',
-      'Загрузите аудиофайлы в папку music в репозитории — сайт пересоберётся сам',
-      uploadUrl ? `<a class="btn btn--accent" href="${uploadUrl}" target="_blank" rel="noopener">Загрузить музыку</a>` : '');
+      configured ? 'Зарегистрируйся и загрузи первый трек — после проверки он появится здесь'
+        : 'Сайт ещё не подключён к Supabase — см. инструкцию в README',
+      configured ? `<a class="btn btn--accent" href="#/account">${icon('plus')}Загрузить музыку</a>` : '');
   }
   if (!player.current) {
     player.source = 'mix:wave';
@@ -662,15 +664,8 @@ async function viewHome() {
       </div>
     </section>` : '';
 
-  const demoHint = feed.demo ? `
-    <section class="hero" style="--c:${esc(paletteFrom(feed.wave[0]?.color).tc)}">
-      <span class="hero__top">${icon('wave')} Демо-режим</span>
-      <span class="hero__sub">Сейчас играют сгенерированные демо-треки. Загрузи свои файлы в папку music — через пару минут они появятся здесь.</span>
-      ${uploadUrl ? `<div class="hero__actions"><a class="btn btn--accent" href="${uploadUrl}" target="_blank" rel="noopener">${icon('plus')}Загрузить музыку</a></div>` : ''}
-    </section>` : '';
 
   return `
-    ${demoHint}
     <section>
       <div class="section__head">
         <h2 class="section__title">Подборки для тебя</h2>
@@ -787,6 +782,7 @@ const VIEWS = {
   playlists: viewPlaylists,
   playlist: viewPlaylist,
   search: viewSearch,
+  account: viewAccount,
 };
 
 function parseRoute() {
@@ -822,7 +818,9 @@ async function render() {
     for (const key of [...lists.keys()]) {
       if (!html.includes(`"${esc(key)}"`)) lists.delete(key);
     }
+    els.view._accountCleanup?.();
     els.view.innerHTML = html;
+    if (route.name === 'account') mountAccount(els.view, render);
     if (route.name === 'search' && !route.q) $('#search-input')?.focus();
   } catch (err) {
     if (id !== renderId) return;

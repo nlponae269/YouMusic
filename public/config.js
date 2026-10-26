@@ -1,3 +1,3 @@
-// Перезаписывается при сборке сайта (scripts/build-site.js)
-window.YOUMUSIC_REPO = '';
-window.YOUMUSIC_BRANCH = 'main';
+// Подключение к Supabase. При деплое заполняется из переменных репозитория (Settings → Variables).
+window.YOUMUSIC_SUPABASE_URL = '';
+window.YOUMUSIC_SUPABASE_KEY = '';
