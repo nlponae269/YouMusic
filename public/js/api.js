@@ -94,8 +94,23 @@ function hourlyShuffle(list) {
   return list.slice().sort((a, b) => score(a.id) - score(b.id));
 }
 
+// Треки из рекомендаций SoundCloud, которых ещё нет в каталоге: храним их у себя,
+// чтобы они жили в «Любимом» и плейлистах
+function externalTracks() {
+  const likes = load('likes', []);
+  return Object.values(load('ext', {})).map((t) => ({ ...t, liked: likes.includes(t.id) }));
+}
+
+function rememberExternal(track) {
+  if (!track?.external) return;
+  const ext = load('ext', {});
+  ext[track.id] = { ...track, liked: false };
+  save('ext', ext);
+}
+
 function byId(tracks) {
-  return new Map(tracks.map((t) => [t.id, t]));
+  // каталожная версия трека важнее сохранённой внешней
+  return new Map([...externalTracks(), ...tracks].map((t) => [t.id, t]));
 }
 
 function playlistSummary(p, map) {
@@ -119,6 +134,22 @@ function findPlaylist(id) {
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 export const api = {
+  // Ссылки на треки SoundCloud, от которых строятся рекомендации: лайки, потом прослушивания,
+  // потом вся библиотека. known — что уже есть в каталоге (рекомендовать не нужно).
+  async soundcloudSeeds() {
+    const tracks = await tracksView();
+    const map = byId(tracks);
+    const plays = load('plays', {});
+    const sc = (t) => t?.soundcloud;
+    const liked = load('likes', []).map((id) => map.get(id)).filter(sc);
+    const played = tracks.filter((t) => sc(t) && plays[t.id]).sort((a, b) => plays[b.id] - plays[a.id]);
+    const rest = hourlyShuffle(tracks.filter(sc));
+    return {
+      seeds: [...liked, ...played, ...rest].map(sc),
+      known: new Set(tracks.filter(sc).map(sc)),
+    };
+  },
+
   async feed() {
     const tracks = await tracksView();
     const likes = load('likes', []);
@@ -165,7 +196,8 @@ export const api = {
     return load('likes', []).map((id) => map.get(id)).filter(Boolean);
   },
 
-  async like(id, on) {
+  async like(id, on, track) {
+    if (on) rememberExternal(track);
     const likes = load('likes', []).filter((x) => x !== id);
     if (on) likes.unshift(id);
     save('likes', likes);
@@ -204,7 +236,8 @@ export const api = {
     save('playlists', load('playlists', []).filter((p) => p.id !== id));
   },
 
-  async addToPlaylist(id, trackId) {
+  async addToPlaylist(id, trackId, track) {
+    rememberExternal(track);
     const { lists, p } = findPlaylist(id);
     if (p.tracks.includes(trackId)) return { added: false };
     p.tracks.push(trackId);
