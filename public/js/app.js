@@ -931,11 +931,13 @@ function updateChrome() {
 }
 
 /* Рекомендации SoundCloud: подгружаются после показа главной, чтобы её не задерживать */
+const STARTER_ARTISTS = ['https://soundcloud.com/chillhopdotcom', 'https://soundcloud.com/lofi_girl'];
 async function loadSoundcloudRecs(id) {
   if (!configured) return;
-  const { seeds, known } = await api.soundcloudSeeds().catch(() => ({ seeds: [] }));
-  if (!seeds.length) return;
-  const recs = await soundcloudRecs(seeds, known);
+  const { seeds, known } = await api.soundcloudSeeds().catch(() => ({ seeds: [], known: new Set() }));
+  // пока в библиотеке нет треков SoundCloud — стартовая подборка из лоу-фай инструментала (без слов)
+  const starter = !seeds.length;
+  const recs = await soundcloudRecs(starter ? STARTER_ARTISTS : seeds, known);
   const slot = els.view.querySelector('[data-sc-recs]');
   if (id !== renderId || !slot || !recs.length) return;
   // подмешиваем в «Мою волну»: каждый третий трек — рекомендация SoundCloud
@@ -950,7 +952,7 @@ async function loadSoundcloudRecs(id) {
   if (player.source === 'mix:wave' && player.queue.length) mix(player.queue, player.index);
   slot.innerHTML = `
     <div class="section__head"><h2 class="section__title">Рекомендации SoundCloud</h2>
-      <span class="section__hint">похоже на то, что ты слушаешь</span></div>
+      <span class="section__hint">${starter ? 'лоу-фай для старта — лайкай, и волна подстроится' : 'похоже на то, что ты слушаешь'}</span></div>
     ${trackRows('home:sc', recs.slice(0, 10))}`;
   slot.hidden = false;
   renderRows();
