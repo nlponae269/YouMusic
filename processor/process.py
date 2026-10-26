@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from words import VERSION as WORDS_VERSION, banned_in, banned_indices, censor_text  # noqa: E402
 
 RATE = 44100
+AI_ALBUM = "Сгенерировано нейросетью"  # так помечены песни из генератора (см. generate.py)
 PAD = 0.12      # запас вокруг слова, сек: таймкоды Whisper неточны на десятые доли
 FADE = 0.04     # плавный переход голос ↔ бит, сек
 
@@ -335,7 +336,8 @@ def process(track):
 
         # 0. текст песни: свой от пользователя или из базы LRCLIB
         lyrics_src = (track.get("lyrics") or "").strip()
-        if not lyrics_src:
+        generated = track.get("album") == AI_ALBUM  # песня нейросети: в базах текстов её нет
+        if not lyrics_src and not generated:
             lyrics_src = find_lyrics(track["artist"], track["title"], len(audio) / RATE)
             print(f"  Текст из базы LRCLIB: {'найден' if lyrics_src else 'нет'}", flush=True)
 
@@ -350,7 +352,7 @@ def process(track):
         artist, n2 = censor_text(track["artist"])
         album, n3 = censor_text(track.get("album") or "")
         # нигде не нашли — текст записывает сама нейросеть по треку
-        if not lyrics_src:
+        if not lyrics_src and not generated:
             lyrics_src = phrases_to_lrc(phrases)
         lyrics, n4 = censor_text(lyrics_src)
         cover_jpg = work / "cover.jpg"
@@ -525,7 +527,8 @@ def main():
     db("PATCH", "tracks?status=eq.processing&processing_started=lt."
        + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3 * 3600)), {"status": "pending"})
 
-    queue = db("GET", f"tracks?status=eq.pending&order=created_at.asc&limit={MAX_TRACKS}") or []
+    # заявки на генерацию (*.gen) сначала обрабатывает generate.py
+    queue = db("GET", f"tracks?status=eq.pending&source_path=not.like.*.gen&order=created_at.asc&limit={MAX_TRACKS}") or []
     print(f"В очереди: {len(queue)}", flush=True)
     done = failed = 0
     for track in queue:

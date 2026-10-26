@@ -225,6 +225,30 @@ function authCheck({ data, error }) {
   return data;
 }
 
+
+// Загрузка файла в приватный бакет incoming (с прогрессом)
+function putIncoming(session, path, body, type, progress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${URL_BASE}/storage/v1/object/incoming/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+    xhr.setRequestHeader('apikey', ANON_KEY);
+    xhr.setRequestHeader('Content-Type', type || 'application/octet-stream');
+    xhr.setRequestHeader('x-upsert', 'false');
+    if (progress) xhr.upload.onprogress = (e) => e.lengthComputable && progress(e.loaded / e.total);
+    xhr.onload = () => {
+      if (xhr.status < 300) return resolve();
+      let msg = `Ошибка загрузки (${xhr.status})`;
+      try { msg = JSON.parse(xhr.responseText).message || msg; } catch { /* не JSON */ }
+      reject(new Error(msg));
+    };
+    xhr.onerror = () => reject(new Error('Нет связи с сервером'));
+    xhr.send(body);
+  });
+}
+
+export const AI_ALBUM = 'Сгенерировано нейросетью';
+
 export const account = {
   async user() {
     if (!configured) return null;
@@ -265,7 +289,7 @@ export const account = {
   async myTracks(all = false) {
     const user = await this.user();
     let q = sb.from('tracks')
-      .select('id,title,artist,status,error,censored,cover_path,color,uploader,created_at')
+      .select('id,title,artist,album,status,error,censored,cover_path,color,uploader,source_path,created_at')
       .order('created_at', { ascending: false }).limit(200);
     if (!all) q = q.eq('owner', user.id);
     return check(await q).map((t) => ({ ...t, cover: t.cover_path ? publicUrl(t.cover_path) : null }));
@@ -277,6 +301,28 @@ export const account = {
   },
 
   // Файл → приватный бакет incoming (с прогрессом), затем строка в очередь модерации
+  // Заявка на песню от нейросети: параметры — JSON-файлом в incoming, трек — в очередь
+  async requestSong({ title, artist, caption, lyrics, language, duration, instrumental }) {
+    const { data } = await sb.auth.getSession();
+    const session = data.session;
+    if (!session) throw new Error('Войдите в аккаунт');
+    const uid = session.user.id;
+    const id = newId();
+    const sourcePath = `${uid}/${id}.gen`;
+    const request = JSON.stringify({ caption, lyrics, language, duration, instrumental });
+    // бакет принимает только audio/*, поэтому у файла заявки «аудио»-тип
+    await putIncoming(session, sourcePath, new Blob([request]), 'audio/x-youmusic-request');
+    check(await sb.from('tracks').insert({
+      id,
+      title: title.trim().slice(0, 200),
+      artist: artist.trim().slice(0, 200),
+      album: AI_ALBUM,
+      source_path: sourcePath,
+      uploader: this.nickname(session.user).slice(0, 60),
+    }));
+    return id;
+  },
+
   async upload({ file, cover, title, artist, album, lyrics }, onProgress) {
     const { data } = await sb.auth.getSession();
     const session = data.session;
@@ -287,23 +333,7 @@ export const account = {
     const ext = (file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp3';
     const sourcePath = `${uid}/${id}.${ext}`;
 
-    const put = (path, body, type, progress) => new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${URL_BASE}/storage/v1/object/incoming/${path}`);
-      xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-      xhr.setRequestHeader('apikey', ANON_KEY);
-      xhr.setRequestHeader('Content-Type', type || 'application/octet-stream');
-      xhr.setRequestHeader('x-upsert', 'false');
-      if (progress) xhr.upload.onprogress = (e) => e.lengthComputable && progress(e.loaded / e.total);
-      xhr.onload = () => {
-        if (xhr.status < 300) return resolve();
-        let msg = `Ошибка загрузки (${xhr.status})`;
-        try { msg = JSON.parse(xhr.responseText).message || msg; } catch { /* не JSON */ }
-        reject(new Error(msg));
-      };
-      xhr.onerror = () => reject(new Error('Нет связи с сервером'));
-      xhr.send(body);
-    });
+    const put = (path, body, type, progress) => putIncoming(session, path, body, type, progress);
 
     await put(sourcePath, file, file.type || 'audio/mpeg', onProgress);
     let coverPath = null;

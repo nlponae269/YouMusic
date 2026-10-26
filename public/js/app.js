@@ -1,5 +1,6 @@
 import { api, account, configured } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
+import { viewCreate, mountCreate } from './create.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
 
@@ -712,7 +713,14 @@ async function viewHome() {
         <a class="btn btn--accent" href="#/account?mode=signup">${icon('user')}Регистрация</a>
         <a class="btn btn--ghost" href="#/account">Войти</a>
       </div>
-    </section>` : '';
+    </section>` : `
+    <a class="promo promo--create" href="#/create">
+      <div>
+        <h2 class="promo__title">Создай свою песню ✨</h2>
+        <p class="promo__text">Опиши стиль и напиши текст — нейросеть сочинит музыку и споёт. Бесплатно.</p>
+      </div>
+      <span class="btn btn--primary">${icon('wave')}Создать песню</span>
+    </a>`;
   const mins = Math.max(1, Math.round((feed.nextRefresh - Date.now()) / 60000));
   const mixes = [
     mixCard('mix:wave', 'Слушать', 'Моя волна', feed.wave),
@@ -853,6 +861,7 @@ const VIEWS = {
   playlist: viewPlaylist,
   search: viewSearch,
   account: viewAccount,
+  create: viewCreate,
 };
 
 function parseRoute() {
@@ -917,6 +926,7 @@ async function render() {
     els.view._accountCleanup?.();
     els.view.innerHTML = html;
     if (route.name === 'account') mountAccount(els.view, render);
+    if (route.name === 'create') mountCreate(els.view);
     if (route.name === 'search' && !route.q) $('#search-input')?.focus();
   } catch (err) {
     if (id !== renderId) return;

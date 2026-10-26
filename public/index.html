@@ -51,12 +51,16 @@
     <!-- Боковое меню (компьютер) -->
     <aside class="side" aria-label="Меню">
       <a class="brand" href="#/"><img src="icon.svg" alt=""><span>You<b>Music</b></span></a>
-      <a class="btn btn--primary btn--block side__upload" href="#/account"><svg><use href="#i-plus"/></svg>Загрузить трек</a>
+      <div class="side__actions">
+        <a class="btn btn--primary btn--block" href="#/create"><svg><use href="#i-wave"/></svg>Создать песню</a>
+        <a class="btn btn--block" href="#/account"><svg><use href="#i-plus"/></svg>Загрузить трек</a>
+      </div>
       <nav class="side__nav">
         <a class="nav-link" href="#/" data-tab="home"><svg><use href="#i-home"/></svg>Главная</a>
         <a class="nav-link" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg>Поиск</a>
         <a class="nav-link" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg>Любимое</a>
         <a class="nav-link" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg>Плейлисты</a>
+        <a class="nav-link" href="#/create" data-tab="create"><svg><use href="#i-wave"/></svg>Создать песню</a>
         <a class="nav-link" href="#/account" data-tab="account"><svg><use href="#i-user"/></svg>Профиль</a>
       </nav>
       <div class="side__note">
@@ -100,7 +104,7 @@
     <a class="tab" href="#/" data-tab="home"><svg><use href="#i-home"/></svg><span>Главная</span></a>
     <a class="tab" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg><span>Поиск</span></a>
     <a class="tab" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg><span>Любимое</span></a>
-    <a class="tab" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg><span>Плейлисты</span></a>
+    <a class="tab" href="#/create" data-tab="create"><svg><use href="#i-wave"/></svg><span>Создать</span></a>
     <a class="tab" href="#/account" data-tab="account"><svg><use href="#i-user"/></svg><span>Профиль</span></a>
   </nav>
 

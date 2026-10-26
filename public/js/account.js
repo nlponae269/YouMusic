@@ -39,7 +39,10 @@ export async function viewAccount(route = {}) {
     </section>
 
     <section class="panel">
-      <h2 class="section__title">Загрузить треки</h2>
+      <div class="upload-head">
+        <h2 class="section__title">Загрузить треки</h2>
+        <a class="btn btn--sm" href="#/create">${icon('wave')}Или создать нейросетью</a>
+      </div>
       <ol class="steps">
         <li>Выбери файлы — название, обложка и текст подтянутся сами</li>
         <li>Проверь название и нажми «Опубликовать»</li>
@@ -88,7 +91,10 @@ function authForm() {
 function trackList(tracks, admin = false) {
   if (!tracks.length) return '<p class="section__hint">Пока ничего нет</p>';
   return `<div class="list">${tracks.map((t) => {
-    const [label, cls] = STATUS[t.status] || [t.status, ''];
+    const gen = (t.source_path || '').endsWith('.gen');
+    const [label, cls] = gen && t.status === 'pending' ? ['В очереди на генерацию', '']
+      : gen && t.status === 'processing' ? ['Нейросеть сочиняет песню…', '']
+        : STATUS[t.status] || [t.status, ''];
     const extra = t.status === 'ready' && t.censored ? ` · вырезано фрагментов: ${t.censored}`
       : t.status === 'failed' && t.error ? `: ${esc(t.error)}` : '';
     return `

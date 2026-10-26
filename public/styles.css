@@ -112,6 +112,7 @@ img { display: block; }
 .nav-link:hover { color: var(--text); background: rgba(255, 255, 255, .04); }
 .nav-link.is-active { color: var(--text); background: rgba(255, 255, 255, .07); }
 .nav-link.is-active svg { color: var(--accent); }
+.side__actions { display: grid; gap: 8px; }
 .side__note {
   margin-top: auto; display: grid; gap: 4px; padding: 16px; border-radius: var(--r-m);
   background: linear-gradient(140deg, rgba(255, 95, 143, .14), rgba(155, 92, 255, .14)); border: 1px solid var(--line);
@@ -508,3 +509,22 @@ img { display: block; }
   .action { font-size: 11px; }
   .np__title { font-size: 23px; }
 }
+
+/* ---------- создание песни ---------- */
+.create { gap: 20px; }
+.create__row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.create__field { display: grid; gap: 8px; min-width: 0; }
+.create__field > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.create__field > span .chip { text-transform: none; letter-spacing: 0; height: 30px; }
+.create__lyrics { height: 220px; padding: 14px 16px; resize: vertical; font: 500 15px/1.55 var(--font); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-toggle {
+  height: 38px; padding: 0 16px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line-2);
+  color: var(--text-2); font-weight: 650; font-size: 14px; transition: background .15s, color .15s, border-color .15s;
+}
+.chip-toggle:hover { color: var(--text); }
+.chip-toggle.is-on { background: rgba(255, 79, 135, .14); border-color: rgba(255, 79, 135, .55); color: var(--text); }
+.promo--create { cursor: pointer; }
+.promo--create:hover { border-color: var(--line-2); }
+.upload-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) { .create__row { grid-template-columns: 1fr; } }
