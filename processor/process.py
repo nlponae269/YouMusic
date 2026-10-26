@@ -29,7 +29,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).parent))
-from words import banned_in, censor_text, is_banned  # noqa: E402
+from words import VERSION as WORDS_VERSION, banned_in, banned_indices, censor_text  # noqa: E402
 
 RATE = 44100
 PAD = 0.12      # запас вокруг слова, сек: таймкоды Whisper неточны на десятые доли
@@ -284,6 +284,41 @@ def generated_cover(title, artist):
 
 # ---------- Обработка одного трека ----------
 
+def censor_audio(wav, audio, lyrics_src, work):
+    """Demucs + Whisper: на месте запрещённых слов оставляет только бит.
+    Возвращает (звук, вырезанные интервалы, распознанные фразы)."""
+    # 1. голос отдельно от бита
+    print("  Разделяю голос и бит (Demucs)…", flush=True)
+    stems = separate(wav, work)
+    vocals_file = stems[0] if stems else wav
+
+    # 2. пословная расшифровка голоса; запрещены и отдельные слова, и фразы («убью себя»)
+    print("  Расшифровываю слова (Whisper)…", flush=True)
+    words, phrases = transcribe_words(vocals_file)
+    bad = [words[i] for i in sorted(banned_indices([w for _, _, w in words]))]
+    intervals = [(s - PAD, e + PAD) for s, e, _ in bad]
+
+    # 3. страховка по тексту LRC: если в строке есть запретное слово, а Whisper его не услышал,
+    #    убираем голос на всю строку
+    for start, end, text in lrc_lines(lyrics_src):
+        if banned_in(text) and not any(s < end and e > start for s, e in intervals):
+            intervals.append((start, end))
+    intervals = merge(intervals)
+
+    # 4. на месте запретных слов оставляем только бит
+    if intervals:
+        mask = censor_mask(len(audio), intervals)[:, None]
+        if stems:
+            inst, _ = sf.read(stems[1], dtype="float32", always_2d=True)
+            n = min(len(audio), len(inst))
+            audio = audio[:n] * (1 - mask[:n]) + inst[:n] * mask[:n]
+        else:
+            audio = audio * (1 - mask)  # без разделения можно только заглушить
+    print(f"  Найдено запретных слов: {len(bad)}, вырезано фрагментов: {len(intervals)}"
+          + (f" ({', '.join(w[0] + '*' * (len(w) - 1) for _, _, w in bad[:10])})" if bad else ""), flush=True)
+    return audio, intervals, phrases
+
+
 def process(track):
     tid = track["id"]
     work = Path(tempfile.mkdtemp(prefix=f"ym-{tid[:8]}-"))
@@ -304,35 +339,7 @@ def process(track):
             lyrics_src = find_lyrics(track["artist"], track["title"], len(audio) / RATE)
             print(f"  Текст из базы LRCLIB: {'найден' if lyrics_src else 'нет'}", flush=True)
 
-        # 1. голос отдельно от бита
-        print("  Разделяю голос и бит (Demucs)…", flush=True)
-        stems = separate(wav, work)
-        vocals_file = stems[0] if stems else wav
-
-        # 2. пословная расшифровка голоса
-        print("  Расшифровываю слова (Whisper)…", flush=True)
-        words, phrases = transcribe_words(vocals_file)
-        bad = [(s, e, w) for s, e, w in words if is_banned(w.strip(".,!?…:;\"'«»()-"))]
-        intervals = [(s - PAD, e + PAD) for s, e, _ in bad]
-
-        # 3. страховка по тексту LRC: если в строке есть запретное слово, а Whisper его не услышал,
-        #    убираем голос на всю строку
-        for start, end, text in lrc_lines(lyrics_src):
-            if banned_in(text) and not any(s < end and e > start for s, e in intervals):
-                intervals.append((start, end))
-        intervals = merge(intervals)
-
-        # 4. на месте запретных слов оставляем только бит
-        if intervals:
-            mask = censor_mask(len(audio), intervals)[:, None]
-            if stems:
-                inst, _ = sf.read(stems[1], dtype="float32", always_2d=True)
-                n = min(len(audio), len(inst))
-                audio = audio[:n] * (1 - mask[:n]) + inst[:n] * mask[:n]
-            else:
-                audio = audio * (1 - mask)  # без разделения можно только заглушить
-        print(f"  Найдено запретных слов: {len(bad)}, вырезано фрагментов: {len(intervals)}"
-              + (f" ({', '.join(w[0] + '*' * (len(w) - 1) for _, _, w in bad[:10])})" if bad else ""), flush=True)
+        audio, intervals, phrases = censor_audio(wav, audio, lyrics_src, work)
 
         out_wav, out_mp3 = work / "out.wav", work / "audio.mp3"
         sf.write(out_wav, audio, RATE)
@@ -381,6 +388,7 @@ def process(track):
             "censored": len(intervals) + n1 + n2 + n3 + n4,
             "published_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         })
+        mark_checked(tid)
         # оригинал без цензуры больше не храним
         storage_delete("incoming", [track["source_path"]] + ([track["cover_source"]] if track.get("cover_source") else []))
     finally:
@@ -400,7 +408,7 @@ def cleanup():
         chunk = ",".join(x for x in ids[i:i + 100] if re.fullmatch(r"[0-9a-f-]{36}", x))
         if chunk:
             alive |= {r["id"] for r in db("GET", f"tracks?select=id&id=in.({chunk})")}
-    dead = [f for f in folders if f not in alive]
+    dead = [f for f in folders if f not in alive and re.fullmatch(r"[0-9a-f-]{36}", f)]
     for folder in dead:
         storage_delete("tracks", [f"{folder}/{o['name']}" for o in storage_list("tracks", folder)])
     dead_incoming = [k for k, tid in incoming.items() if tid not in alive]
@@ -411,6 +419,76 @@ def cleanup():
 
 def now_iso(offset=0):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset))
+
+
+STATE_KEY = "_meta/state.json"
+
+
+def load_state():
+    try:
+        return json.loads(request("GET", f"/storage/v1/object/tracks/{STATE_KEY}", raw=True))
+    except RuntimeError:
+        return {}
+
+
+def mark_checked(tid):
+    state = load_state()
+    if state.get("version") != WORDS_VERSION:
+        return  # перепроверка ещё идёт — трек и так попадёт в неё или уже проверен новым словарём
+    state["checked"] = sorted(set(state.get("checked", [])) | {tid})
+    save_state(state)
+
+
+def recensor(limit=3):
+    """Словарь изменился — перепроверяем уже опубликованные треки: вырезаем новые слова
+    из звука и прячем их в названии и тексте."""
+    state = load_state()
+    done = set(state.get("checked", [])) if state.get("version") == WORDS_VERSION else set()
+    rows = db("GET", "tracks?select=id,title,artist,album,lyrics,audio_path,censored&status=eq.ready&order=published_at.asc") or []
+    todo = [t for t in rows if t["id"] not in done][:limit]
+    for t in todo:
+        print(f"Перепроверка по новому словарю: «{t['artist']} — {t['title']}»", flush=True)
+        work = Path(tempfile.mkdtemp(prefix="ym-re-"))
+        try:
+            mp3, wav = work / "old.mp3", work / "old.wav"
+            storage_download("tracks", t["audio_path"], mp3)
+            decode(mp3, wav)
+            audio, _ = sf.read(wav, dtype="float32", always_2d=True)
+            title, n1 = censor_text(t["title"])
+            artist, n2 = censor_text(t["artist"])
+            album, n3 = censor_text(t.get("album") or "")
+            lyrics, n4 = censor_text(t.get("lyrics") or "")
+            # строки текста с новыми запретными словами тоже идут в страховку по LRC
+            audio, intervals, _ = censor_audio(wav, audio, t.get("lyrics") or "", work)
+            patch = {"title": title, "artist": artist, "album": album or None, "lyrics": lyrics or None}
+            if intervals:
+                # новое имя файла, чтобы браузеры не взяли старую версию из кэша
+                key = f"{t['id']}/audio-v{WORDS_VERSION}.mp3"
+                out_wav, out_mp3 = work / "out.wav", work / "audio.mp3"
+                sf.write(out_wav, audio, RATE)
+                run(["ffmpeg", "-v", "error", "-y", "-i", str(out_wav), "-c:a", "libmp3lame", "-b:a", "128k", str(out_mp3)])
+                storage_upload("tracks", key, out_mp3, "audio/mpeg")
+                patch.update({"audio_path": key, "peaks": peaks(audio.mean(axis=1)), "duration": round(len(audio) / RATE, 1)})
+            patch["censored"] = (t.get("censored") or 0) + len(intervals) + n1 + n2 + n3 + n4
+            db("PATCH", f"tracks?id=eq.{t['id']}", patch)
+            if intervals and t["audio_path"] != patch["audio_path"]:
+                storage_delete("tracks", [t["audio_path"]])
+            print(f"  ✓ готово: вырезано ещё {len(intervals)}, в названии/тексте скрыто {n1 + n2 + n3 + n4}", flush=True)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        done.add(t["id"])
+        save_state({"version": WORDS_VERSION, "checked": sorted(done)})
+
+
+def save_state(state):
+    tmp = Path(tempfile.mkstemp(suffix=".json")[1])
+    try:
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        storage_upload("tracks", STATE_KEY, tmp, "application/json")
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def backfill_lyrics(limit=3):
@@ -469,10 +547,11 @@ def main():
                 storage_delete("incoming", [track["source_path"]] + ([track["cover_source"]] if track.get("cover_source") else []))
             except Exception:  # noqa: BLE001
                 pass
-    try:
-        backfill_lyrics()
-    except Exception:  # noqa: BLE001
-        traceback.print_exc()
+    for step in (recensor, backfill_lyrics):
+        try:
+            step()
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
     cleanup()
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

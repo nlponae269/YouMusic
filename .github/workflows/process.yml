@@ -38,10 +38,11 @@ jobs:
           queue=$(q "tracks?select=id&status=in.(pending,processing)&limit=1")
           lyrics=$(q "tracks?select=id&status=eq.ready&has_lyrics=eq.false&error=is.null&limit=1")
           failed=$(q "tracks?select=id&status=eq.failed&created_at=lt.$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)&limit=1")
-          if [ "$queue$lyrics$failed" = "[][][]" ]; then
+          recheck=$(python3 processor/needs_recensor.py)
+          if [ "$queue$lyrics$failed" = "[][][]" ] && [ "$recheck" = "no" ]; then
             echo "Делать нечего"; echo "work=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Очередь: $queue, без текста: $lyrics"; echo "work=true" >> "$GITHUB_OUTPUT"
+            echo "Очередь: $queue, без текста: $lyrics, перепроверка по словарю: $recheck"; echo "work=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
