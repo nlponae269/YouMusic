@@ -31,18 +31,20 @@
 3. **SQL Editor** → **New query**. Открой на GitHub файл [`supabase/schema.sql`](supabase/schema.sql) → кнопка **Raw** → выдели всё и скопируй → вставь в редактор → **Run**. Должно появиться `Success`.
 4. **Authentication** → **Sign In / Providers** → **Email** → выключи **Confirm email** → **Save**. Иначе каждому придётся подтверждать почту, а бесплатный тариф отправляет всего несколько писем в час.
 5. **Authentication** → **URL Configuration** → **Site URL**: `https://nlponae269.github.io/YouMusic/` → **Save**.
-6. **Project Settings** → **API Keys** → вкладка **Legacy API Keys**. Скопируй и сохрани в заметки:
-   - `anon` `public` — публичный ключ;
-   - `service_role` `secret` (нажми **Reveal**) — секретный ключ, **никому не показывай**.
-7. **Project Settings** → **Data API** → скопируй **Project URL** (вида `https://xxxx.supabase.co`).
+6. Включи в браузере **«Версия для ПК»**: в мобильном виде Supabase прячет кнопки копирования. Открой **Project Settings** (шестерёнка) → **API Keys**. Скопируй и сохрани в заметки два ключа:
+   - **Publishable key** (`sb_publishable_…`) — публичный ключ; в старых проектах он называется `anon` `public`;
+   - **Secret key** (`sb_secret_…`): нажми 👁 или **Reveal**, потом копировать. В старых проектах — `service_role`. **Никому не показывай.**
+
+   Копировать — иконка с двумя квадратиками справа от ключа.
+7. Нажми **Connect** вверху страницы проекта → скопируй **Project URL** (вида `https://xxxx.supabase.co`).
 
 ### 2. GitHub
 **Settings** → **Secrets and variables** → **Actions**.
 - Вкладка **Variables** → **New repository variable**, добавь две:
   - `SUPABASE_URL` — Project URL;
-  - `SUPABASE_ANON_KEY` — ключ `anon`.
+  - `SUPABASE_ANON_KEY` — Publishable key (или `anon`).
 - Вкладка **Secrets** → **New repository secret**, добавь одну:
-  - `SUPABASE_SERVICE_KEY` — ключ `service_role`.
+  - `SUPABASE_SERVICE_KEY` — Secret key (или `service_role`).
 
 Затем **Actions** → **Deploy** → **Run workflow**. Через минуту сайт обновится.
 
