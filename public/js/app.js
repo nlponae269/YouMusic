@@ -34,6 +34,11 @@ const els = {
   miniPlay: $('#mini-play'),
   miniLike: $('#mini-like'),
   miniProgress: $('#mini-progress'),
+  miniOpen: $('#mini-open'),
+  miniPrev: $('#mini-prev'),
+  miniNext: $('#mini-next'),
+  miniExpand: $('#mini-expand'),
+  npClose: $('#np-close'),
   voice: $('#voice-btn'),
 };
 
@@ -376,7 +381,6 @@ els.view.addEventListener('click', async (e) => {
     } else {
       playList(key, 0);
     }
-    location.hash = '#/';
     return;
   }
 
@@ -653,16 +657,24 @@ function emptyState(iconName, title, text, action = '') {
 
 function mixCard(key, label, title, tracks) {
   lists.set(key, tracks);
-  const { tc, accent } = paletteFrom(tracks[0]?.color);
+  const { tc } = paletteFrom(tracks[0]?.color);
   const covers = tracks.filter((t) => t.cover).slice(0, 3);
   const active = player.source === key && player.current;
   return `
-    <button class="mix" data-mix="${key}" style="--mix:${tc};--mix2:${accent}">
+    <button class="mix" data-mix="${key}" style="--mix:${tc};--mix2:rgba(155,92,255,.55)">
       <span class="mix__covers">${covers.map((t) => `<img src="${t.cover}" alt="" loading="lazy">`).join('')}</span>
       <span class="mix__label">${active ? 'Вернуться' : label}</span>
       <span class="mix__title">${esc(title)}</span>
       <span class="mix__play">${icon('play')}${active ? 'Продолжить' : 'Слушать'}</span>
     </button>`;
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5) return 'Доброй ночи';
+  if (h < 12) return 'Доброе утро';
+  if (h < 18) return 'Добрый день';
+  return 'Добрый вечер';
 }
 
 async function viewHome() {
@@ -719,6 +731,10 @@ async function viewHome() {
 
 
   return `
+    <header class="greet">
+      <h1 class="greet__hi">${greeting()}${user ? `, ${esc(account.nickname(user))}` : ''}</h1>
+      <span class="greet__sub">Бесплатно, без рекламы и без мата</span>
+    </header>
     ${banner}
     <section>
       <div class="section__head">
@@ -850,12 +866,36 @@ function parseRoute() {
   return { name: 'home' };
 }
 
+/* Плеер на весь экран открывается поверх любой страницы */
+let npOpen = false;
+
+function openPlayer() {
+  if (!player.current) return;
+  npOpen = true;
+  updateChrome();
+  buildWave();
+}
+
+function closePlayer() {
+  npOpen = false;
+  updateChrome();
+}
+
+els.miniOpen.addEventListener('click', openPlayer);
+els.miniExpand.addEventListener('click', openPlayer);
+els.npClose.addEventListener('click', closePlayer);
+els.miniPrev.addEventListener('click', () => player.prev());
+els.miniNext.addEventListener('click', () => player.next());
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && npOpen && !document.querySelector('.lyrics, .sheet-backdrop')) closePlayer();
+});
+
 function updateChrome() {
-  const home = route.name === 'home';
-  els.player.hidden = !home || !player.current;
-  els.mini.hidden = home || !player.current;
+  els.player.hidden = !npOpen || !player.current;
+  els.mini.hidden = !player.current;
+  document.body.classList.toggle('np-open', npOpen && !!player.current);
   const tab = route.name === 'playlist' ? 'playlists' : route.name;
-  document.querySelectorAll('.tab').forEach((a) => {
+  document.querySelectorAll('[data-tab]').forEach((a) => {
     a.classList.toggle('is-active', a.dataset.tab === tab);
     if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -888,11 +928,12 @@ async function render() {
 }
 
 window.addEventListener('hashchange', () => {
+  npOpen = false; // переход по ссылке (например, на артиста) сворачивает плеер
   render();
   window.scrollTo({ top: 0, behavior: 'instant' });
 });
 window.addEventListener('scroll', () => {
-  $('.topbar').classList.toggle('is-scrolled', window.scrollY > 8);
+  $('.top').classList.toggle('is-scrolled', window.scrollY > 8);
 }, { passive: true });
 
 /* =============== Старт =============== */

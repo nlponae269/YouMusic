@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0a10">
+  <meta name="theme-color" content="#0c0c10">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>YouMusic</title>
@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -47,92 +47,103 @@
     </defs>
   </svg>
 
-  <div class="backdrop" aria-hidden="true">
-    <div class="backdrop__glow backdrop__glow--a"></div>
-    <div class="backdrop__glow backdrop__glow--b"></div>
-    <div class="backdrop__grain"></div>
+  <div class="shell">
+    <!-- Боковое меню (компьютер) -->
+    <aside class="side" aria-label="Меню">
+      <a class="brand" href="#/"><img src="icon.svg" alt=""><span>You<b>Music</b></span></a>
+      <a class="btn btn--primary btn--block side__upload" href="#/account"><svg><use href="#i-plus"/></svg>Загрузить трек</a>
+      <nav class="side__nav">
+        <a class="nav-link" href="#/" data-tab="home"><svg><use href="#i-home"/></svg>Главная</a>
+        <a class="nav-link" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg>Поиск</a>
+        <a class="nav-link" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg>Любимое</a>
+        <a class="nav-link" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg>Плейлисты</a>
+        <a class="nav-link" href="#/account" data-tab="account"><svg><use href="#i-user"/></svg>Профиль</a>
+      </nav>
+      <div class="side__note">
+        <b>Бесплатно и без рекламы</b>
+        <span>Мат и запрещённые темы вырезает нейросеть</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="top">
+        <a class="brand brand--compact" href="#/"><img src="icon.svg" alt=""><span>You<b>Music</b></span></a>
+        <a class="search-pill" href="#/search"><svg><use href="#i-search"/></svg><span>Трек, артист или альбом</span></a>
+        <span class="top__spacer"></span>
+        <a class="icon-btn icon-btn--mobile" href="#/search" aria-label="Поиск"><svg><use href="#i-search"/></svg></a>
+        <button class="icon-btn" id="voice-btn" aria-label="Голосовой поиск" title="Голосовой поиск"><svg><use href="#i-mic"/></svg></button>
+        <a class="btn btn--primary btn--sm" id="login-btn" href="#/account">Войти</a>
+        <a class="avatar" id="avatar-btn" href="#/account" aria-label="Профиль" hidden></a>
+      </header>
+      <main id="view" class="view"></main>
+    </div>
   </div>
 
-  <header class="topbar">
-    <a class="logo" href="#/" aria-label="YouMusic — на главную">
-      <img class="logo__mark" src="icon.svg" alt="">
-      <span class="logo__name">You<b>Music</b></span>
-    </a>
-    <span class="topbar__spacer"></span>
-    <a class="icon-btn" href="#/search" aria-label="Поиск" title="Поиск"><svg><use href="#i-search"/></svg></a>
-    <button class="icon-btn" id="voice-btn" aria-label="Голосовой поиск" title="Голосовой поиск"><svg><use href="#i-mic"/></svg></button>
-    <a class="btn btn--accent btn--sm" id="login-btn" href="#/account">Войти</a>
-    <a class="avatar" id="avatar-btn" href="#/account" aria-label="Профиль" hidden></a>
-  </header>
+  <!-- Панель плеера: мини на телефоне, полоса внизу на компьютере -->
+  <div class="bar" id="mini" hidden>
+    <span class="bar__progress"><i id="mini-progress"></i></span>
+    <button class="bar__track" id="mini-open" aria-label="Открыть плеер">
+      <img class="bar__art" id="mini-art" alt="">
+      <span class="bar__meta"><b id="mini-title"></b><small id="mini-artist"></small></span>
+    </button>
+    <button class="icon-btn" id="mini-like" aria-label="Нравится"><svg><use href="#i-heart"/></svg></button>
+    <div class="bar__controls">
+      <button class="icon-btn bar__desk" id="mini-prev" aria-label="Предыдущий"><svg><use href="#i-prev"/></svg></button>
+      <button class="bar__play" id="mini-play" aria-label="Слушать"><svg><use href="#i-play"/></svg></button>
+      <button class="icon-btn bar__desk" id="mini-next" aria-label="Следующий"><svg><use href="#i-next"/></svg></button>
+    </div>
+    <button class="icon-btn bar__desk" id="mini-expand" aria-label="Открыть плеер"><svg><use href="#i-chevron-down"/></svg></button>
+  </div>
 
-  <main class="app">
-    <section class="player" id="player" hidden>
-      <div class="player__art-wrap">
-        <div class="player__art-glow" aria-hidden="true"></div>
-        <img class="player__art" id="art" alt="" draggable="false">
-      </div>
+  <!-- Вкладки (телефон) -->
+  <nav class="tabs" aria-label="Разделы">
+    <a class="tab" href="#/" data-tab="home"><svg><use href="#i-home"/></svg><span>Главная</span></a>
+    <a class="tab" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg><span>Поиск</span></a>
+    <a class="tab" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg><span>Любимое</span></a>
+    <a class="tab" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg><span>Плейлисты</span></a>
+    <a class="tab" href="#/account" data-tab="account"><svg><use href="#i-user"/></svg><span>Профиль</span></a>
+  </nav>
 
-      <div class="deck">
-        <div class="deck__head">
-          <div class="deck__meta">
-            <h1 class="deck__title" id="title">—</h1>
-            <a class="deck__artist" id="artist" href="#/search">—</a>
-          </div>
+  <!-- Плеер на весь экран -->
+  <section class="np" id="player" hidden role="dialog" aria-label="Сейчас играет">
+    <div class="np__bg" aria-hidden="true"></div>
+    <header class="np__head">
+      <button class="icon-btn" id="np-close" aria-label="Свернуть"><svg><use href="#i-chevron-down"/></svg></button>
+      <span class="np__label">Сейчас играет</span>
+      <button class="icon-btn" id="queue-btn" aria-label="Очередь" title="Очередь"><svg><use href="#i-library"/></svg></button>
+    </header>
+    <div class="np__body">
+      <div class="np__art"><img id="art" alt="" draggable="false"></div>
+      <div class="np__panel">
+        <div class="np__meta">
+          <h1 class="np__title" id="title">—</h1>
+          <a class="np__artist" id="artist" href="#/search">—</a>
         </div>
-        <div class="actions">
+        <div class="np__actions">
           <button class="action" id="like-btn"><svg><use href="#i-heart"/></svg><span>Нравится</span></button>
           <button class="action" id="add-btn"><svg><use href="#i-plus"/></svg><span>Плейлист</span></button>
           <button class="action" id="download-btn"><svg><use href="#i-download"/></svg><span>Скачать</span></button>
           <button class="action" id="share-btn"><svg><use href="#i-share"/></svg><span>Поделиться</span></button>
         </div>
-
         <div class="wave" id="wave" role="slider" tabindex="0" aria-label="Позиция трека" aria-valuemin="0" aria-valuemax="100"></div>
-        <div class="deck__times">
-          <span id="time-cur">0:00</span>
-          <span id="time-dur">0:00</span>
+        <div class="np__times"><span id="time-cur">0:00</span><span id="time-dur">0:00</span></div>
+        <div class="np__controls">
+          <button class="icon-btn" id="shuffle-btn" aria-label="Перемешать"><svg><use href="#i-shuffle"/></svg></button>
+          <button class="icon-btn icon-btn--lg" id="prev-btn" aria-label="Предыдущий"><svg><use href="#i-prev"/></svg></button>
+          <button class="play-btn" id="play-btn" aria-label="Слушать"><svg><use href="#i-play"/></svg><span>Слушать</span></button>
+          <button class="icon-btn icon-btn--lg" id="next-btn" aria-label="Следующий"><svg><use href="#i-next"/></svg></button>
+          <button class="icon-btn" id="repeat-btn" aria-label="Повтор"><svg><use href="#i-repeat"/></svg></button>
         </div>
-        <div class="deck__chips">
-          <button class="chip" id="lyrics-btn"><svg><use href="#i-lyrics"/></svg>Текст песни</button>
-          <button class="chip" id="queue-btn"><svg><use href="#i-library"/></svg>Очередь</button>
-        </div>
-
-        <div class="controls">
-          <button class="ctrl-btn" id="shuffle-btn" aria-label="Перемешать"><svg><use href="#i-shuffle"/></svg></button>
-          <button class="ctrl-btn ctrl-btn--lg" id="prev-btn" aria-label="Предыдущий"><svg><use href="#i-prev"/></svg></button>
-          <button class="play-pill" id="play-btn" aria-label="Слушать">
-            <svg><use href="#i-play"/></svg><span>Слушать</span>
-          </button>
-          <button class="ctrl-btn ctrl-btn--lg" id="next-btn" aria-label="Следующий"><svg><use href="#i-next"/></svg></button>
-          <button class="ctrl-btn" id="repeat-btn" aria-label="Повтор"><svg><use href="#i-repeat"/></svg></button>
-        </div>
-
-        <div class="volume">
-          <button class="ctrl-btn ctrl-btn--sm" id="mute-btn" aria-label="Звук"><svg><use href="#i-volume"/></svg></button>
-          <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Громкость">
+        <div class="np__foot">
+          <button class="btn btn--soft btn--sm" id="lyrics-btn"><svg><use href="#i-lyrics"/></svg>Текст песни</button>
+          <div class="volume">
+            <button class="icon-btn" id="mute-btn" aria-label="Звук"><svg><use href="#i-volume"/></svg></button>
+            <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Громкость">
+          </div>
         </div>
       </div>
-    </section>
-
-    <div id="view" class="view"></div>
-  </main>
-
-  <div class="mini" id="mini" hidden>
-    <a class="mini__open" href="#/" aria-label="Открыть плеер">
-      <img class="mini__art" id="mini-art" alt="">
-      <span class="mini__meta"><b id="mini-title"></b><small id="mini-artist"></small></span>
-    </a>
-    <button class="mini__btn" id="mini-like" aria-label="Нравится"><svg><use href="#i-heart"/></svg></button>
-    <button class="mini__btn" id="mini-play" aria-label="Слушать"><svg><use href="#i-play"/></svg></button>
-    <span class="mini__progress" id="mini-progress"></span>
-  </div>
-
-  <nav class="tabbar" aria-label="Разделы">
-    <a class="tab" href="#/" data-tab="home"><svg><use href="#i-home"/></svg><span>Главная</span></a>
-    <a class="tab" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg><span>Любимое</span></a>
-    <a class="tab" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg><span>Плейлисты</span></a>
-    <a class="tab" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg><span>Поиск</span></a>
-    <a class="tab" href="#/account" data-tab="account"><svg><use href="#i-user"/></svg><span>Профиль</span></a>
-  </nav>
+    </div>
+  </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <audio id="audio" preload="metadata"></audio>
