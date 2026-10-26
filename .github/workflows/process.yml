@@ -22,6 +22,11 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Администраторы (по почте владельца)
+        run: python3 processor/admins.py
+
       - name: Есть ли что обрабатывать
         id: queue
         run: |
@@ -32,16 +37,12 @@ jobs:
           q() { curl -sf "$SUPABASE_URL/rest/v1/$1" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY"; }
           queue=$(q "tracks?select=id&status=in.(pending,processing)&limit=1")
           lyrics=$(q "tracks?select=id&status=eq.ready&has_lyrics=eq.false&error=is.null&limit=1")
-          admins=$(q "admins?select=user_id&limit=1")
           failed=$(q "tracks?select=id&status=eq.failed&created_at=lt.$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)&limit=1")
-          if [ "$queue$lyrics$failed" = "[][][]" ] && [ "$admins" != "[]" ]; then
+          if [ "$queue$lyrics$failed" = "[][][]" ]; then
             echo "Делать нечего"; echo "work=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Очередь: $queue, без текста: $lyrics, админ: $admins"; echo "work=true" >> "$GITHUB_OUTPUT"
+            echo "Очередь: $queue, без текста: $lyrics"; echo "work=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.queue.outputs.work == 'true'
 
       - uses: actions/setup-python@v5
         if: steps.queue.outputs.work == 'true'

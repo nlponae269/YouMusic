@@ -413,22 +413,6 @@ def now_iso(offset=0):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset))
 
 
-def ensure_admin():
-    """Если админа ещё нет — назначает владельца сайта: автора самой первой загрузки
-    (или самого первого зарегистрированного пользователя)."""
-    if db("GET", "admins?select=user_id&limit=1"):
-        return
-    first = db("GET", "tracks?select=owner&order=created_at.asc&limit=1")
-    user_id = first[0]["owner"] if first else None
-    if not user_id:
-        users = (request("GET", "/auth/v1/admin/users?page=1&per_page=1000") or {}).get("users", [])
-        users.sort(key=lambda u: u.get("created_at") or "")
-        user_id = users[0]["id"] if users else None
-    if user_id:
-        db("POST", "admins", {"user_id": user_id})
-        print(f"Назначен администратор: {user_id}")
-
-
 def backfill_lyrics(limit=3):
     """Подтягивает тексты к уже опубликованным трекам, у которых их нет."""
     rows = db("GET", f"tracks?select=id,title,artist,duration,audio_path&status=eq.ready"
@@ -456,7 +440,6 @@ def main():
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("Не заданы SUPABASE_URL и SUPABASE_SERVICE_KEY")
 
-    ensure_admin()
     # загрузки с ошибкой старше трёх дней удаляем сами
     db("DELETE", f"tracks?status=eq.failed&created_at=lt.{now_iso(-3 * 86400)}")
 
