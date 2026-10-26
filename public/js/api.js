@@ -1,61 +1,202 @@
-function clientId() {
-  let id;
-  try { id = localStorage.getItem('ym:client'); } catch { /* приватный режим */ }
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    try { localStorage.setItem('ym:client', id); } catch { /* без сохранения */ }
+// «Бэкенд» без сервера: каталог (catalog.json) и музыка лежат рядом с сайтом на GitHub Pages,
+// лайки, плейлисты и счётчики прослушиваний — в памяти браузера.
+
+const CATALOG = 'catalog.json';
+
+// Ссылка, куда загружать музыку в репозитории (config.js генерируется при сборке)
+export const uploadUrl = window.YOUMUSIC_REPO
+  ? `https://github.com/${window.YOUMUSIC_REPO}/upload/${window.YOUMUSIC_BRANCH || 'main'}/music`
+  : null;
+
+function mediaUrl(key) {
+  return new URL(key, document.baseURI).href;
+}
+
+function load(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(`ym:${key}`)) ?? fallback;
+  } catch {
+    return fallback;
   }
-  return id;
 }
 
-const CLIENT_ID = clientId();
-
-// Адрес сервера задаётся в config.js; пусто — тот же домен
-export const API_BASE = String(window.YOUMUSIC_API || '').replace(/\/$/, '');
-
-export function apiUrl(path) {
-  return `${API_BASE}${path}`;
+function save(key, value) {
+  try {
+    localStorage.setItem(`ym:${key}`, JSON.stringify(value));
+  } catch { /* хранилище браузера недоступно */ }
 }
 
-// Сервер отдаёт ссылки вида /api/…; если фронт живёт на другом домене, дописываем адрес сервера
-function absolutize(value) {
-  if (typeof value === 'string') return value.startsWith('/api/') ? apiUrl(value) : value;
-  if (Array.isArray(value)) return value.map(absolutize);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, absolutize(v)]));
+let catalogPromise = null;
+let isDemo = false;
+let catalogAt = 0;
+
+async function catalog() {
+  // перечитываем каталог не чаще раза в минуту
+  if (!catalogPromise || Date.now() - catalogAt > 60_000) {
+    catalogAt = Date.now();
+    catalogPromise = (async () => {
+      const res = await fetch(CATALOG, { cache: 'no-cache' });
+      if (res.status === 404) return [];
+      if (!res.ok) throw new Error(`Не удалось загрузить каталог (${res.status})`);
+      const data = await res.json();
+      isDemo = !!data.demo;
+      return Array.isArray(data.tracks) ? data.tracks : [];
+    })();
+    catalogPromise.catch(() => { catalogPromise = null; });
   }
-  return value;
+  return catalogPromise;
 }
 
-async function request(method, url, body) {
-  const res = await fetch(apiUrl(url), {
-    method,
-    headers: {
-      'X-Client-Id': CLIENT_ID,
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Ошибка ${res.status}`);
-  }
-  return res.status === 204 ? null : absolutize(await res.json());
+function view(t, likes) {
+  return {
+    id: t.id,
+    title: t.title,
+    artist: t.artist,
+    album: t.album || null,
+    duration: t.duration || 0,
+    color: t.color || '#7a5cff',
+    peaks: t.peaks || null,
+    liked: likes.includes(t.id),
+    hasLyrics: !!t.lyrics,
+    cover: t.cover ? mediaUrl(t.cover) : null,
+    stream: mediaUrl(t.audio),
+  };
 }
+
+async function tracksView() {
+  const likes = load('likes', []);
+  return (await catalog()).map((t) => view(t, likes));
+}
+
+// Детерминированное перемешивание: подборки стабильны в течение часа
+function hourlyShuffle(list) {
+  const seed = Math.floor(Date.now() / 3_600_000);
+  const score = (id) => {
+    let h = seed;
+    for (const ch of id) h = (Math.imul(h ^ ch.charCodeAt(0), 2654435761) >>> 0);
+    return h;
+  };
+  return list.slice().sort((a, b) => score(a.id) - score(b.id));
+}
+
+function byId(tracks) {
+  return new Map(tracks.map((t) => [t.id, t]));
+}
+
+function playlistSummary(p, map) {
+  const tracks = p.tracks.map((id) => map.get(id)).filter(Boolean);
+  return {
+    id: p.id,
+    title: p.title,
+    count: tracks.length,
+    color: tracks[0]?.color || null,
+    covers: tracks.filter((t) => t.cover).slice(0, 4).map((t) => t.cover),
+  };
+}
+
+function findPlaylist(id) {
+  const lists = load('playlists', []);
+  const p = lists.find((x) => x.id === id);
+  if (!p) throw new Error('Плейлист не найден');
+  return { lists, p };
+}
+
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 export const api = {
-  feed: () => request('GET', '/api/feed'),
-  search: (q) => request('GET', `/api/tracks?q=${encodeURIComponent(q)}`),
-  track: (id) => request('GET', `/api/tracks/${id}`),
-  lyrics: (id) => request('GET', `/api/tracks/${id}/lyrics`),
-  played: (id) => request('POST', `/api/tracks/${id}/play`),
-  likes: () => request('GET', '/api/likes'),
-  like: (id, on) => request(on ? 'PUT' : 'DELETE', `/api/likes/${id}`),
-  playlists: () => request('GET', '/api/playlists'),
-  playlist: (id) => request('GET', `/api/playlists/${id}`),
-  createPlaylist: (title) => request('POST', '/api/playlists', { title }),
-  renamePlaylist: (id, title) => request('PATCH', `/api/playlists/${id}`, { title }),
-  deletePlaylist: (id) => request('DELETE', `/api/playlists/${id}`),
-  addToPlaylist: (id, trackId) => request('POST', `/api/playlists/${id}/tracks`, { trackId }),
-  removeFromPlaylist: (id, trackId) => request('DELETE', `/api/playlists/${id}/tracks/${trackId}`),
+  async feed() {
+    const tracks = await tracksView();
+    const likes = load('likes', []);
+    const plays = load('plays', {});
+    const likedArtists = new Set(tracks.filter((t) => t.liked).map((t) => t.artist));
+    const map = byId(tracks);
+    const wave = hourlyShuffle(tracks).sort((a, b) => likedArtists.has(b.artist) - likedArtists.has(a.artist));
+    const fresh = tracks.slice().reverse();
+    const popular = hourlyShuffle(tracks).sort((a, b) => (plays[b.id] || 0) - (plays[a.id] || 0));
+    return {
+      wave: wave.slice(0, 40),
+      fresh: fresh.slice(0, 30),
+      popular: popular.slice(0, 30),
+      liked: likes.map((id) => map.get(id)).filter(Boolean),
+      playlists: load('playlists', []).map((p) => playlistSummary(p, map)),
+      demo: isDemo,
+      nextRefresh: (Math.floor(Date.now() / 3_600_000) + 1) * 3_600_000,
+    };
+  },
+
+  async search(q) {
+    const tracks = (await tracksView()).reverse();
+    const query = q.trim().toLowerCase();
+    if (!query) return tracks.slice(0, 100);
+    return tracks.filter((t) => `${t.artist} ${t.title} ${t.album || ''}`.toLowerCase().includes(query));
+  },
+
+  async lyrics(id) {
+    const t = (await catalog()).find((x) => x.id === id);
+    return { lyrics: t?.lyrics || '' };
+  },
+
+  async played(id) {
+    const plays = load('plays', {});
+    plays[id] = (plays[id] || 0) + 1;
+    save('plays', plays);
+  },
+
+  async likes() {
+    const map = byId(await tracksView());
+    return load('likes', []).map((id) => map.get(id)).filter(Boolean);
+  },
+
+  async like(id, on) {
+    const likes = load('likes', []).filter((x) => x !== id);
+    if (on) likes.unshift(id);
+    save('likes', likes);
+  },
+
+  async playlists() {
+    const map = byId(await tracksView());
+    return load('playlists', []).map((p) => playlistSummary(p, map));
+  },
+
+  async playlist(id) {
+    const { p } = findPlaylist(id);
+    const map = byId(await tracksView());
+    return { id: p.id, title: p.title, tracks: p.tracks.map((t) => map.get(t)).filter(Boolean) };
+  },
+
+  async createPlaylist(title) {
+    const name = String(title || '').trim().slice(0, 80);
+    if (!name) throw new Error('Введите название');
+    const lists = load('playlists', []);
+    const p = { id: newId(), title: name, tracks: [] };
+    lists.unshift(p);
+    save('playlists', lists);
+    return { id: p.id, title: p.title, count: 0, covers: [], color: null };
+  },
+
+  async renamePlaylist(id, title) {
+    const name = String(title || '').trim().slice(0, 80);
+    if (!name) throw new Error('Введите название');
+    const { lists, p } = findPlaylist(id);
+    p.title = name;
+    save('playlists', lists);
+  },
+
+  async deletePlaylist(id) {
+    save('playlists', load('playlists', []).filter((p) => p.id !== id));
+  },
+
+  async addToPlaylist(id, trackId) {
+    const { lists, p } = findPlaylist(id);
+    if (p.tracks.includes(trackId)) return { added: false };
+    p.tracks.push(trackId);
+    save('playlists', lists);
+    return { added: true };
+  },
+
+  async removeFromPlaylist(id, trackId) {
+    const { lists, p } = findPlaylist(id);
+    p.tracks = p.tracks.filter((t) => t !== trackId);
+    save('playlists', lists);
+  },
 };

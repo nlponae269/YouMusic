@@ -1,23 +1,14 @@
 {
   "name": "youmusic",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "YouMusic — музыкальный стриминг для Yandex Cloud",
+  "description": "YouMusic — бесплатный музыкальный стриминг на GitHub Pages",
   "type": "module",
-  "main": "src/server.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch --env-file=.env src/server.js",
-    "setup-bucket": "node scripts/setup-bucket.js",
-    "seed": "node scripts/seed.js"
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.700.0",
-    "@aws-sdk/s3-request-presigner": "^3.700.0",
-    "express": "^4.21.2",
-    "pg": "^8.13.1"
+    "build": "node scripts/build-site.js",
+    "preview": "node scripts/build-site.js && cd _site && python3 -m http.server 8080"
   }
 }

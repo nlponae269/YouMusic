@@ -1,5 +1,5 @@
-// Кэшируем только оболочку приложения; API и аудио всегда идут в сеть
-const CACHE = 'youmusic-shell-v2';
+// Кэшируем только оболочку приложения; музыка и каталог всегда идут в сеть
+const CACHE = 'youmusic-shell-v3';
 const SHELL = ['./', 'styles.css', 'config.js', 'js/app.js', 'js/api.js', 'js/player.js', 'js/util.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -14,7 +14,9 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+  // музыку и каталог не кэшируем: аудио идёт с поддержкой Range, каталог должен быть свежим
+  if (e.request.method !== 'GET' || url.origin !== location.origin
+    || url.pathname.includes('/media/') || url.pathname.endsWith('catalog.json')) return;
   // сеть в приоритете, кэш — на случай офлайна
   e.respondWith(
     fetch(e.request)

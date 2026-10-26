@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 deploy/.state.env
 deploy/yandex-ca.pem
+_site/

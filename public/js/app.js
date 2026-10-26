@@ -1,4 +1,4 @@
-import { api, apiUrl } from './api.js';
+import { api, uploadUrl } from './api.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
 
@@ -227,14 +227,24 @@ els.mute.addEventListener('click', () => player.toggleMute());
 els.like.addEventListener('click', () => player.current && toggleLike(player.current));
 els.miniLike.addEventListener('click', () => player.current && toggleLike(player.current));
 els.add.addEventListener('click', () => player.current && openPlaylistPicker(player.current));
-els.download.addEventListener('click', () => {
+els.download.addEventListener('click', async () => {
   const t = player.current;
   if (!t) return;
-  const a = document.createElement('a');
-  a.href = apiUrl(`/api/tracks/${t.id}/download`);
-  a.download = '';
-  a.click();
-  toast('Скачивание началось');
+  // файл лежит на другом домене — атрибут download там не работает, поэтому качаем через blob
+  toast('Скачиваю…');
+  try {
+    const res = await fetch(t.stream);
+    if (!res.ok) throw new Error();
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${t.artist} - ${t.title}.${t.stream.split('.').pop()}`.replace(/[\\/:*?"<>|]/g, '_');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    toast('Готово');
+  } catch {
+    toast('Не удалось скачать трек');
+  }
 });
 els.lyrics.addEventListener('click', () => openLyrics());
 
@@ -629,8 +639,8 @@ async function viewHome() {
   feed = await api.feed();
   if (!feed.wave.length) {
     return emptyState('wave', 'Здесь пока тихо',
-      'Загрузите первые треки через панель администратора',
-      '<a class="btn btn--accent" href="admin.html">Открыть админку</a>');
+      'Загрузите аудиофайлы в папку music в репозитории — сайт пересоберётся сам',
+      uploadUrl ? `<a class="btn btn--accent" href="${uploadUrl}" target="_blank" rel="noopener">Загрузить музыку</a>` : '');
   }
   if (!player.current) {
     player.source = 'mix:wave';
@@ -640,7 +650,7 @@ async function viewHome() {
   const mixes = [
     mixCard('mix:wave', 'Слушать', 'Моя волна', feed.wave),
     mixCard('mix:fresh', 'Только что', 'Новинки', feed.fresh),
-    mixCard('mix:popular', 'Все слушают', 'В тренде', feed.popular),
+    mixCard('mix:popular', 'Твоё', 'На повторе', feed.popular),
     feed.liked.length ? mixCard('mix:liked', 'Ваше', 'Любимое', feed.liked) : '',
   ].join('');
 
@@ -652,7 +662,15 @@ async function viewHome() {
       </div>
     </section>` : '';
 
+  const demoHint = feed.demo ? `
+    <section class="hero" style="--c:${esc(paletteFrom(feed.wave[0]?.color).tc)}">
+      <span class="hero__top">${icon('wave')} Демо-режим</span>
+      <span class="hero__sub">Сейчас играют сгенерированные демо-треки. Загрузи свои файлы в папку music — через пару минут они появятся здесь.</span>
+      ${uploadUrl ? `<div class="hero__actions"><a class="btn btn--accent" href="${uploadUrl}" target="_blank" rel="noopener">${icon('plus')}Загрузить музыку</a></div>` : ''}
+    </section>` : '';
+
   return `
+    ${demoHint}
     <section>
       <div class="section__head">
         <h2 class="section__title">Подборки для тебя</h2>
@@ -666,7 +684,7 @@ async function viewHome() {
       ${trackRows('home:fresh', feed.fresh.slice(0, 8))}
     </section>
     <section>
-      <div class="section__head"><h2 class="section__title">Популярное</h2></div>
+      <div class="section__head"><h2 class="section__title">Часто слушаешь</h2></div>
       ${trackRows('home:popular', feed.popular.slice(0, 8))}
     </section>`;
 }

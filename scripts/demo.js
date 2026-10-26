@@ -1,9 +1,7 @@
-// Наполняет каталог демо-треками: музыка синтезируется прямо здесь, обложки — SVG.
-// Запуск: npm run seed  (нужны те же переменные окружения, что и серверу)
-import crypto from 'node:crypto';
-import { migrate, pool } from '../src/db.js';
-import { putObject } from '../src/storage.js';
-import { insertTrack } from '../src/api.js';
+// Демо-треки: музыка синтезируется прямо здесь, обложки — SVG.
+// Используются, только пока в папке music/ нет своих файлов.
+import fs from 'node:fs';
+import path from 'node:path';
 
 const RATE = 22050;
 const SECONDS = 48;
@@ -101,18 +99,6 @@ function wav(samples) {
   return buf;
 }
 
-function peaks(samples, count = 128) {
-  const block = Math.floor(samples.length / count);
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    let sum = 0;
-    for (let j = 0; j < block; j += 8) sum += samples[i * block + j] ** 2;
-    out.push(Math.sqrt(sum / (block / 8)));
-  }
-  const max = Math.max(...out);
-  return out.map((p) => +(p / max).toFixed(3));
-}
-
 function hslHex(h, s, l) {
   s /= 100; l /= 100;
   const f = (n) => {
@@ -155,35 +141,23 @@ function lrc(spec, index) {
   return rows.join('\n');
 }
 
-await migrate();
-const { rows } = await pool.query('select count(*)::int as n from tracks');
-if (rows[0].n > 0 && !process.argv.includes('--force')) {
-  console.log(`В каталоге уже ${rows[0].n} треков — пропускаю (добавьте --force, чтобы всё равно залить демо).`);
-  await pool.end();
-  process.exit(0);
-}
-
-for (const [index, spec] of DEMO.entries()) {
-  const id = crypto.randomUUID();
-  const samples = synth(spec);
-  const audioKey = `audio/${id}.wav`;
-  const coverKey = `covers/${id}.svg`;
-  await putObject(audioKey, wav(samples), 'audio/wav');
-  await putObject(coverKey, Buffer.from(cover(spec)), 'image/svg+xml');
-  await insertTrack({
-    id,
-    title: spec.title,
-    artist: spec.artist,
-    album: spec.album,
-    duration: SECONDS,
-    audio_key: audioKey,
-    audio_type: 'audio/wav',
-    cover_key: coverKey,
-    color: hslHex(spec.hue, 85, 55),
-    peaks: JSON.stringify(peaks(samples)),
-    lyrics: lrc(spec, index),
+// Пишет WAV-файлы в dir и возвращает их вместе с готовыми метаданными
+export function makeDemo(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  return DEMO.map((spec, index) => {
+    const file = path.join(dir, `demo-${index + 1}.wav`);
+    fs.writeFileSync(file, wav(synth(spec)));
+    return {
+      file,
+      meta: {
+        key: `demo/${index + 1}`,
+        title: spec.title,
+        artist: spec.artist,
+        album: spec.album,
+        lyrics: lrc(spec, index),
+        coverSvg: cover(spec),
+        color: hslHex(spec.hue, 85, 55),
+      },
+    };
   });
-  console.log(`+ ${spec.artist} — ${spec.title}`);
 }
-await pool.end();
-console.log('Готово');
