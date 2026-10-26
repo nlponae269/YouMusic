@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0a10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>YouMusic</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.2v13.6c0 .8.9 1.3 1.6.9l10.8-6.8a1 1 0 0 0 0-1.8L9.6 4.3C8.9 3.9 8 4.4 8 5.2z"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><rect fill="currentColor" x="6" y="4.5" width="4" height="15" rx="1.3"/><rect fill="currentColor" x="14" y="4.5" width="4" height="15" rx="1.3"/></symbol>
+      <symbol id="i-prev" viewBox="0 0 24 24"><rect fill="currentColor" x="4.5" y="5" width="3" height="14" rx="1.2"/><path fill="currentColor" d="M19.5 6.3v11.4c0 .8-.9 1.3-1.6.8l-8.6-5.7a1 1 0 0 1 0-1.6l8.6-5.7c.7-.5 1.6 0 1.6.8z"/></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><rect fill="currentColor" x="16.5" y="5" width="3" height="14" rx="1.2"/><path fill="currentColor" d="M4.5 6.3v11.4c0 .8.9 1.3 1.6.8l8.6-5.7a1 1 0 0 0 0-1.6L6.1 5.5c-.7-.5-1.6 0-1.6.8z"/></symbol>
+      <symbol id="i-shuffle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3.5c2 0 3.2 1 4.3 2.7l2.4 4.6c1 1.8 2.3 2.7 4.3 2.7H21"/><path d="M3 17h3.5c1.3 0 2.2-.4 3-1.1M14.5 8.1c.8-.7 1.7-1.1 3-1.1H21"/><path d="M18.5 4.5 21 7l-2.5 2.5M18.5 14.5 21 17l-2.5 2.5"/></g></symbol>
+      <symbol id="i-repeat" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H19"/><path d="m16 3 3 3-3 3"/><path d="M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H5"/><path d="m8 21-3-3 3-3"/></g></symbol>
+      <symbol id="i-repeat-one" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H19"/><path d="m16 3 3 3-3 3"/><path d="M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H5"/><path d="m8 21-3-3 3-3"/><path d="M11.2 10.6 12.6 9.8V15"/></g></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 20s-7.5-4.4-7.5-10.2A4.3 4.3 0 0 1 12 7.1a4.3 4.3 0 0 1 7.5 2.7C19.5 15.6 12 20 12 20z"/></symbol>
+      <symbol id="i-heart-fill" viewBox="0 0 24 24"><path fill="currentColor" d="M12 20.6c-.2 0-.4 0-.5-.1C11.2 20.3 3.5 15.8 3.5 9.8a5.3 5.3 0 0 1 8.5-4.2 5.3 5.3 0 0 1 8.5 4.2c0 6-7.7 10.5-8 10.7-.1.1-.3.1-.5.1z"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></g></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></g></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></g></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 12c1.4-3 2.8-3 4.2 0s2.8 3 4.2 0 2.8-3 4.2 0 2.2 2 3.4 1"/><path d="M4 6.5h16M4 17.5h10"/></g></symbol>
+      <symbol id="i-library" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12M4 11h12M4 16h7"/><path d="M15 19.5V14l5-1.5v5.5"/><circle cx="13.5" cy="19.5" r="1.5"/><circle cx="18.5" cy="18" r="1.5"/></g></symbol>
+      <symbol id="i-lyrics" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h13M4 11h9M4 16h6"/><path d="M17 18.5V10l3.5-1"/><circle cx="15.5" cy="18.5" r="1.8"/></g></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
+      <symbol id="i-volume-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></g></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m15 5-7 7 7 7"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></g></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-wave" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></g></symbol>
+    </defs>
+  </svg>
+
+  <div class="backdrop" aria-hidden="true">
+    <div class="backdrop__glow backdrop__glow--a"></div>
+    <div class="backdrop__glow backdrop__glow--b"></div>
+    <div class="backdrop__grain"></div>
+  </div>
+
+  <header class="topbar">
+    <a class="logo" href="#/" aria-label="YouMusic — на главную">
+      <span class="logo__mark"><svg><use href="#i-wave"/></svg></span>
+    </a>
+    <div class="ticker" id="ticker"><div class="ticker__track"><span id="ticker-text">YouMusic</span></div></div>
+    <button class="icon-btn" id="voice-btn" aria-label="Голосовой поиск"><svg><use href="#i-mic"/></svg></button>
+    <a class="icon-btn" href="#/search" aria-label="Поиск"><svg><use href="#i-search"/></svg></a>
+  </header>
+
+  <main class="app">
+    <section class="player" id="player" hidden>
+      <div class="player__art-wrap">
+        <div class="player__art-glow" aria-hidden="true"></div>
+        <img class="player__art" id="art" alt="" draggable="false">
+      </div>
+
+      <div class="deck">
+        <div class="deck__head">
+          <div class="deck__meta">
+            <h1 class="deck__title" id="title">—</h1>
+            <a class="deck__artist" id="artist" href="#/search">—</a>
+          </div>
+          <div class="deck__actions">
+            <button class="round-btn" id="download-btn" aria-label="Скачать"><svg><use href="#i-download"/></svg></button>
+            <button class="round-btn" id="add-btn" aria-label="Добавить в плейлист"><svg><use href="#i-plus"/></svg></button>
+            <button class="round-btn round-btn--like" id="like-btn" aria-label="Нравится"><svg><use href="#i-heart"/></svg></button>
+          </div>
+        </div>
+
+        <div class="wave" id="wave" role="slider" tabindex="0" aria-label="Позиция трека" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="deck__times">
+          <span id="time-cur">0:00</span>
+          <button class="chip" id="lyrics-btn"><svg><use href="#i-lyrics"/></svg>Текст</button>
+          <span id="time-dur">0:00</span>
+        </div>
+
+        <div class="controls">
+          <button class="ctrl-btn" id="shuffle-btn" aria-label="Перемешать"><svg><use href="#i-shuffle"/></svg></button>
+          <button class="ctrl-btn ctrl-btn--lg" id="prev-btn" aria-label="Предыдущий"><svg><use href="#i-prev"/></svg></button>
+          <button class="play-pill" id="play-btn" aria-label="Слушать">
+            <svg><use href="#i-play"/></svg><span>Слушать</span>
+          </button>
+          <button class="ctrl-btn ctrl-btn--lg" id="next-btn" aria-label="Следующий"><svg><use href="#i-next"/></svg></button>
+          <button class="ctrl-btn" id="repeat-btn" aria-label="Повтор"><svg><use href="#i-repeat"/></svg></button>
+        </div>
+
+        <div class="volume">
+          <button class="ctrl-btn ctrl-btn--sm" id="mute-btn" aria-label="Звук"><svg><use href="#i-volume"/></svg></button>
+          <input class="range" id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Громкость">
+        </div>
+      </div>
+    </section>
+
+    <div id="view" class="view"></div>
+  </main>
+
+  <div class="mini" id="mini" hidden>
+    <a class="mini__open" href="#/" aria-label="Открыть плеер">
+      <img class="mini__art" id="mini-art" alt="">
+      <span class="mini__meta"><b id="mini-title"></b><small id="mini-artist"></small></span>
+    </a>
+    <button class="mini__btn" id="mini-like" aria-label="Нравится"><svg><use href="#i-heart"/></svg></button>
+    <button class="mini__btn" id="mini-play" aria-label="Слушать"><svg><use href="#i-play"/></svg></button>
+    <span class="mini__progress" id="mini-progress"></span>
+  </div>
+
+  <nav class="tabbar" aria-label="Разделы">
+    <a class="tab" href="#/" data-tab="home"><svg><use href="#i-home"/></svg><span>Главная</span></a>
+    <a class="tab" href="#/liked" data-tab="liked"><svg><use href="#i-heart"/></svg><span>Любимое</span></a>
+    <a class="tab" href="#/playlists" data-tab="playlists"><svg><use href="#i-library"/></svg><span>Плейлисты</span></a>
+    <a class="tab" href="#/search" data-tab="search"><svg><use href="#i-search"/></svg><span>Поиск</span></a>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <audio id="audio" preload="metadata"></audio>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

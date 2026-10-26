@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>YouMusic · Загрузка</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .admin { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; display: grid; gap: 24px; }
+    .admin header { display: flex; align-items: center; gap: 14px; }
+    .admin header h1 { flex: 1; margin: 0; font: 800 26px/1.1 var(--display); letter-spacing: -.02em; }
+    .panel { padding: 20px; border-radius: var(--radius-lg); background: var(--surface-solid); border: 1px solid var(--line); display: grid; gap: 14px; }
+    .panel h2 { margin: 0; font: 700 18px/1.2 var(--display); }
+    .drop {
+      display: grid; place-items: center; gap: 8px; padding: 36px 16px; text-align: center; cursor: pointer;
+      border: 2px dashed var(--line); border-radius: var(--radius-lg); color: var(--muted); transition: border-color .2s, background .2s;
+    }
+    .drop.is-over, .drop:hover { border-color: var(--accent); background: rgba(255, 255, 255, .03); }
+    .drop svg { width: 40px; height: 40px; color: var(--accent); }
+    .item { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 14px; border-radius: 20px; background: rgba(255, 255, 255, .04); position: relative; }
+    .item__cover { position: relative; width: 112px; aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: #222; cursor: pointer; }
+    .item__cover img { width: 100%; height: 100%; object-fit: cover; }
+    .item__cover span { position: absolute; inset: auto 0 0; padding: 4px; font-size: 11px; text-align: center; background: rgba(0, 0, 0, .55); }
+    .item__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+    .item__fields .wide { grid-column: span 2; }
+    .item .field { height: 44px; font-size: 14px; }
+    .item textarea.field { height: 90px; padding: 10px 14px; resize: vertical; font: 600 13px/1.4 ui-monospace, monospace; }
+    .item__info { grid-column: span 2; display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 13px; }
+    .item__bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+    .item__bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .item__remove { position: absolute; top: 8px; right: 8px; }
+    .item.is-done { opacity: .55; }
+    .item.is-error .item__info { color: #ff7a7a; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+    @media (max-width: 600px) {
+      .item { grid-template-columns: 1fr; }
+      .item__cover { width: 100%; max-width: 200px; }
+      .item__fields { grid-template-columns: 1fr; }
+      .item__fields .wide, .item__info { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-wave" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></g></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V5M7.5 9.5 12 5l4.5 4.5M5 19.5h14"/></g></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></g></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 20s-7.5-4.4-7.5-10.2A4.3 4.3 0 0 1 12 7.1a4.3 4.3 0 0 1 7.5 2.7C19.5 15.6 12 20 12 20z"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    </defs>
+  </svg>
+  <div class="backdrop" aria-hidden="true"><div class="backdrop__glow backdrop__glow--a"></div><div class="backdrop__grain"></div></div>
+
+  <div class="admin">
+    <header>
+      <a class="logo" href="/"><span class="logo__mark"><svg><use href="#i-wave"/></svg></span></a>
+      <h1>Загрузка музыки</h1>
+      <button class="btn btn--ghost" id="logout" hidden>Выйти</button>
+    </header>
+
+    <form class="panel" id="login">
+      <h2>Вход</h2>
+      <p class="section__hint" style="margin:0">Введите ADMIN_TOKEN из настроек сервера.</p>
+      <div class="actions">
+        <input class="field" style="flex:1;min-width:200px" name="token" type="password" placeholder="Токен администратора" required>
+        <button class="btn btn--accent">Войти</button>
+      </div>
+    </form>
+
+    <section class="panel" id="uploader" hidden>
+      <h2>Новые треки</h2>
+      <label class="drop" id="drop">
+        <svg><use href="#i-upload"/></svg>
+        <b>Перетащите аудиофайлы или нажмите, чтобы выбрать</b>
+        <span>MP3, M4A, OGG, FLAC, WAV · теги ID3 и обложка подтянутся автоматически</span>
+        <input type="file" id="files" accept="audio/*" multiple hidden>
+      </label>
+      <div id="items" style="display:grid;gap:12px"></div>
+      <div class="actions" id="upload-actions" hidden>
+        <button class="btn btn--accent" id="upload-all"><svg><use href="#i-upload"/></svg>Загрузить всё</button>
+        <span class="section__hint" id="upload-status"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="library" hidden>
+      <h2>Библиотека</h2>
+      <input class="field" id="lib-search" type="search" placeholder="Поиск по библиотеке">
+      <div class="list" id="lib-list"></div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>
