@@ -137,6 +137,10 @@ export const api = {
     return tracks.filter((t) => `${t.artist} ${t.title} ${t.album || ''} ${t.uploader || ''}`.toLowerCase().includes(query));
   },
 
+  async track(id) {
+    return (await tracksView()).find((t) => t.id === id) || null;
+  },
+
   async lyrics(id) {
     const rows = check(await sb.from('tracks').select('lyrics').eq('id', id).limit(1));
     return { lyrics: rows[0]?.lyrics || '' };

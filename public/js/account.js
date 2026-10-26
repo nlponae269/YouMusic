@@ -14,7 +14,12 @@ let mode = 'login';
 let pendingFiles = [];
 let pollTimer = null;
 
-export async function viewAccount() {
+export async function viewAccount(route = {}) {
+  if (route.mode === 'signup' || route.mode === 'login') {
+    mode = route.mode;
+    route.mode = null;
+    history.replaceState(null, '', '#/account');
+  }
   if (!configured) {
     return `<h1 class="page-title">Профиль</h1>
       <div class="empty">${icon('user')}<b>Сайт ещё не подключён</b>
@@ -30,24 +35,28 @@ export async function viewAccount() {
       <span class="hero__top">${icon('user')} Профиль${admin ? ' · администратор' : ''}</span>
       <h1 class="hero__title">${esc(account.nickname(user))}</h1>
       <span class="hero__sub">${esc(user.email || '')}</span>
-      <div class="hero__actions"><button class="btn btn--ghost" data-acc="logout">Выйти</button></div>
+      <div class="hero__actions"><button class="btn btn--ghost" data-acc="logout">Выйти из аккаунта</button></div>
     </section>
 
     <section class="panel">
       <h2 class="section__title">Загрузить треки</h2>
-      <label class="drop" id="drop">
-        ${icon('plus')}
-        <b>Выбери аудиофайлы</b>
-        <span>MP3, M4A, OGG, FLAC, WAV до 50 МБ · название и обложка подтянутся из тегов</span>
+      <ol class="steps">
+        <li>Выбери файлы — название, обложка и текст подтянутся сами</li>
+        <li>Проверь название и нажми «Опубликовать»</li>
+        <li>Через 10–30 минут трек появится на сайте</li>
+      </ol>
+      <label class="btn btn--accent btn--lg btn--block" id="drop">
+        ${icon('plus')}Выбрать треки
         <input type="file" id="files" accept="audio/*,.mp3,.m4a,.ogg,.flac,.wav,.opus" multiple hidden>
       </label>
+      <span class="section__hint">MP3, M4A, OGG, FLAC, WAV · до 50 МБ</span>
       <div id="items" class="items"></div>
       <div id="upload-bar" class="upload-bar" hidden>
         <label class="check"><input type="checkbox" id="rights"> У меня есть права на эту музыку</label>
-        <button class="btn btn--accent" data-acc="upload">${icon('plus')}Загрузить</button>
+        <button class="btn btn--accent" data-acc="upload">${icon('check')}Опубликовать</button>
       </div>
       <p class="section__hint">Каждый трек проверяет нейросеть: мат и упоминания наркотиков вырезаются, на их месте остаётся бит.
-        Обычно это занимает 10–30 минут.</p>
+        Текст песни найдётся сам в открытой базе текстов или будет записан нейросетью.</p>
     </section>
 
     <section>
@@ -91,7 +100,7 @@ function trackList(tracks, admin = false) {
         <span class="status ${cls}">${label}${extra}</span>
       </span>
       <span></span>
-      <button class="row__btn" data-acc="delete" aria-label="Удалить">${icon('trash')}</button>
+      <button class="btn btn--ghost btn--sm" data-acc="delete">${icon('trash')}Удалить</button>
     </div>`;
   }).join('')}</div>`;
 }

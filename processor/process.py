@@ -118,7 +118,7 @@ _whisper = None
 
 
 def transcribe_words(path):
-    """Пословная расшифровка: [(начало, конец, слово)]."""
+    """Пословная расшифровка: ([(начало, конец, слово)], [(начало, фраза)])."""
     global _whisper
     from faster_whisper import WhisperModel
 
@@ -133,11 +133,64 @@ def transcribe_words(path):
     segments, info = _whisper.transcribe(samples, **opts)
     if info.language not in ("ru", "en", "uk"):
         segments, info = _whisper.transcribe(samples, language="ru", **opts)
-    words = []
+    words, phrases = [], []
     for seg in segments:
+        phrases.append((seg.start, seg.text.strip()))
         for w in seg.words or []:
             words.append((w.start, w.end, w.word.strip()))
-    return words
+    return words, phrases
+
+
+# ---------- Тексты песен ----------
+# Открытая бесплатная база LRCLIB (lrclib.net): тексты с таймкодами, без ключей и регистрации.
+
+LRCLIB = "https://lrclib.net/api"
+# типичные «галлюцинации» распознавания речи на музыке — в текст песни не берём
+HALLUCINATIONS = re.compile(r"субтитр|продолжение следует|подписывайтесь|dimatorzok|спасибо за просмотр|редактор", re.I)
+
+
+def lrclib(path, params):
+    url = f"{LRCLIB}/{path}?{urllib.parse.urlencode(params)}"
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "YouMusic (https://github.com/nlponae269/YouMusic)"})
+            with urllib.request.urlopen(req, timeout=20) as res:
+                return json.loads(res.read())
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                return None
+            time.sleep(3 * (attempt + 1))
+        except Exception:  # noqa: BLE001
+            time.sleep(3 * (attempt + 1))
+    return None
+
+
+def find_lyrics(artist, title, duration):
+    """Ищет текст в LRCLIB. Возвращает LRC с таймкодами или обычный текст, либо ''."""
+    artist = re.sub(r"\*+", "", artist).strip()
+    title = re.sub(r"\*+", "", title).strip()
+    if not artist or not title:
+        return ""
+    found = lrclib("get", {"artist_name": artist, "track_name": title, "duration": int(duration)})
+    if not found:
+        results = lrclib("search", {"artist_name": artist, "track_name": title}) or []
+        # берём совпадение по длительности (±8 с), с таймкодами в приоритете
+        close = [r for r in results if not r.get("instrumental") and abs((r.get("duration") or 0) - duration) <= 8]
+        close.sort(key=lambda r: (not r.get("syncedLyrics"), abs((r.get("duration") or 0) - duration)))
+        found = close[0] if close else None
+    if not found or found.get("instrumental"):
+        return ""
+    return (found.get("syncedLyrics") or found.get("plainLyrics") or "").strip()
+
+
+def phrases_to_lrc(phrases):
+    """Текст песни из распознанных фраз Whisper, с таймкодами."""
+    lines = []
+    for start, text in phrases:
+        if not text or HALLUCINATIONS.search(text):
+            continue
+        lines.append(f"[{int(start // 60):02d}:{start % 60:05.2f}] {text}")
+    return "\n".join(lines)
 
 
 def lrc_lines(lyrics):
@@ -245,6 +298,12 @@ def process(track):
 
         audio, _ = sf.read(wav, dtype="float32", always_2d=True)
 
+        # 0. текст песни: свой от пользователя или из базы LRCLIB
+        lyrics_src = (track.get("lyrics") or "").strip()
+        if not lyrics_src:
+            lyrics_src = find_lyrics(track["artist"], track["title"], len(audio) / RATE)
+            print(f"  Текст из базы LRCLIB: {'найден' if lyrics_src else 'нет'}", flush=True)
+
         # 1. голос отдельно от бита
         print("  Разделяю голос и бит (Demucs)…", flush=True)
         stems = separate(wav, work)
@@ -252,13 +311,13 @@ def process(track):
 
         # 2. пословная расшифровка голоса
         print("  Расшифровываю слова (Whisper)…", flush=True)
-        words = transcribe_words(vocals_file)
+        words, phrases = transcribe_words(vocals_file)
         bad = [(s, e, w) for s, e, w in words if is_banned(w.strip(".,!?…:;\"'«»()-"))]
         intervals = [(s - PAD, e + PAD) for s, e, _ in bad]
 
         # 3. страховка по тексту LRC: если в строке есть запретное слово, а Whisper его не услышал,
         #    убираем голос на всю строку
-        for start, end, text in lrc_lines(track.get("lyrics")):
+        for start, end, text in lrc_lines(lyrics_src):
             if banned_in(text) and not any(s < end and e > start for s, e in intervals):
                 intervals.append((start, end))
         intervals = merge(intervals)
@@ -283,7 +342,10 @@ def process(track):
         title, n1 = censor_text(track["title"])
         artist, n2 = censor_text(track["artist"])
         album, n3 = censor_text(track.get("album") or "")
-        lyrics, n4 = censor_text(track.get("lyrics") or "")
+        # нигде не нашли — текст записывает сама нейросеть по треку
+        if not lyrics_src:
+            lyrics_src = phrases_to_lrc(phrases)
+        lyrics, n4 = censor_text(lyrics_src)
         cover_jpg = work / "cover.jpg"
         has_cover = False
         if track.get("cover_source"):
@@ -347,9 +409,56 @@ def cleanup():
         print(f"Удалены файлы {len(dead)} удалённых треков и {len(dead_incoming)} брошенных загрузок")
 
 
+def now_iso(offset=0):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset))
+
+
+def ensure_admin():
+    """Если админа ещё нет — назначает владельца сайта: автора самой первой загрузки
+    (или самого первого зарегистрированного пользователя)."""
+    if db("GET", "admins?select=user_id&limit=1"):
+        return
+    first = db("GET", "tracks?select=owner&order=created_at.asc&limit=1")
+    user_id = first[0]["owner"] if first else None
+    if not user_id:
+        users = (request("GET", "/auth/v1/admin/users?page=1&per_page=1000") or {}).get("users", [])
+        users.sort(key=lambda u: u.get("created_at") or "")
+        user_id = users[0]["id"] if users else None
+    if user_id:
+        db("POST", "admins", {"user_id": user_id})
+        print(f"Назначен администратор: {user_id}")
+
+
+def backfill_lyrics(limit=3):
+    """Подтягивает тексты к уже опубликованным трекам, у которых их нет."""
+    rows = db("GET", f"tracks?select=id,title,artist,duration,audio_path&status=eq.ready"
+                     f"&has_lyrics=eq.false&error=is.null&order=published_at.desc&limit={limit}") or []
+    for t in rows:
+        print(f"Текст для «{t['artist']} — {t['title']}»…", flush=True)
+        lyrics = find_lyrics(t["artist"], t["title"], t.get("duration") or 0)
+        if not lyrics:
+            work = Path(tempfile.mkdtemp(prefix="ym-lyr-"))
+            try:
+                mp3, wav = work / "a.mp3", work / "a.wav"
+                storage_download("tracks", t["audio_path"], mp3)
+                decode(mp3, wav)
+                stems = separate(wav, work)
+                lyrics = phrases_to_lrc(transcribe_words(stems[0] if stems else wav)[1])
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+        text, _ = censor_text(lyrics)
+        # пометка «текста нет», чтобы не искать заново при каждом запуске
+        db("PATCH", f"tracks?id=eq.{t['id']}", {"lyrics": text} if text.strip() else {"error": "no-lyrics"})
+        print(f"  {'добавлен' if text.strip() else 'текста нет (инструментал?)'}", flush=True)
+
+
 def main():
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("Не заданы SUPABASE_URL и SUPABASE_SERVICE_KEY")
+
+    ensure_admin()
+    # загрузки с ошибкой старше трёх дней удаляем сами
+    db("DELETE", f"tracks?status=eq.failed&created_at=lt.{now_iso(-3 * 86400)}")
 
     # треки, «застрявшие» после упавшего запуска, возвращаем в очередь
     db("PATCH", "tracks?status=eq.processing&processing_started=lt."
@@ -377,6 +486,10 @@ def main():
                 storage_delete("incoming", [track["source_path"]] + ([track["cover_source"]] if track.get("cover_source") else []))
             except Exception:  # noqa: BLE001
                 pass
+    try:
+        backfill_lyrics()
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
     cleanup()
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:

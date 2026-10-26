@@ -1,5 +1,5 @@
 // Кэшируем только оболочку приложения; музыка и каталог всегда идут в сеть
-const CACHE = 'youmusic-shell-v4';
+const CACHE = 'youmusic-shell-v5';
 const SHELL = ['./', 'styles.css', 'config.js', 'js/app.js', 'js/api.js', 'js/player.js', 'js/util.js', 'js/account.js', 'js/tags.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

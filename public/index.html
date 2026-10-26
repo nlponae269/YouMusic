@@ -42,6 +42,7 @@
       <symbol id="i-trash" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/></g></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
       <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></g></symbol>
+      <symbol id="i-share" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M5 12v6.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V12"/></g></symbol>
       <symbol id="i-wave" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></g></symbol>
     </defs>
   </svg>
@@ -54,11 +55,14 @@
 
   <header class="topbar">
     <a class="logo" href="#/" aria-label="YouMusic — на главную">
-      <span class="logo__mark"><svg><use href="#i-wave"/></svg></span>
+      <img class="logo__mark" src="icon.svg" alt="">
+      <span class="logo__name">You<b>Music</b></span>
     </a>
-    <div class="ticker" id="ticker"><div class="ticker__track"><span id="ticker-text">YouMusic</span></div></div>
-    <button class="icon-btn" id="voice-btn" aria-label="Голосовой поиск"><svg><use href="#i-mic"/></svg></button>
-    <a class="icon-btn" href="#/search" aria-label="Поиск"><svg><use href="#i-search"/></svg></a>
+    <span class="topbar__spacer"></span>
+    <a class="icon-btn" href="#/search" aria-label="Поиск" title="Поиск"><svg><use href="#i-search"/></svg></a>
+    <button class="icon-btn" id="voice-btn" aria-label="Голосовой поиск" title="Голосовой поиск"><svg><use href="#i-mic"/></svg></button>
+    <a class="btn btn--accent btn--sm" id="login-btn" href="#/account">Войти</a>
+    <a class="avatar" id="avatar-btn" href="#/account" aria-label="Профиль" hidden></a>
   </header>
 
   <main class="app">
@@ -74,18 +78,22 @@
             <h1 class="deck__title" id="title">—</h1>
             <a class="deck__artist" id="artist" href="#/search">—</a>
           </div>
-          <div class="deck__actions">
-            <button class="round-btn" id="download-btn" aria-label="Скачать"><svg><use href="#i-download"/></svg></button>
-            <button class="round-btn" id="add-btn" aria-label="Добавить в плейлист"><svg><use href="#i-plus"/></svg></button>
-            <button class="round-btn round-btn--like" id="like-btn" aria-label="Нравится"><svg><use href="#i-heart"/></svg></button>
-          </div>
+        </div>
+        <div class="actions">
+          <button class="action" id="like-btn"><svg><use href="#i-heart"/></svg><span>Нравится</span></button>
+          <button class="action" id="add-btn"><svg><use href="#i-plus"/></svg><span>Плейлист</span></button>
+          <button class="action" id="download-btn"><svg><use href="#i-download"/></svg><span>Скачать</span></button>
+          <button class="action" id="share-btn"><svg><use href="#i-share"/></svg><span>Поделиться</span></button>
         </div>
 
         <div class="wave" id="wave" role="slider" tabindex="0" aria-label="Позиция трека" aria-valuemin="0" aria-valuemax="100"></div>
         <div class="deck__times">
           <span id="time-cur">0:00</span>
-          <button class="chip" id="lyrics-btn"><svg><use href="#i-lyrics"/></svg>Текст</button>
           <span id="time-dur">0:00</span>
+        </div>
+        <div class="deck__chips">
+          <button class="chip" id="lyrics-btn"><svg><use href="#i-lyrics"/></svg>Текст песни</button>
+          <button class="chip" id="queue-btn"><svg><use href="#i-library"/></svg>Очередь</button>
         </div>
 
         <div class="controls">

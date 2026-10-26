@@ -1,4 +1,4 @@
-import { api, configured } from './api.js';
+import { api, account, configured } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
@@ -9,8 +9,6 @@ const els = {
   art: $('#art'),
   title: $('#title'),
   artist: $('#artist'),
-  ticker: $('#ticker'),
-  tickerText: $('#ticker-text'),
   wave: $('#wave'),
   cur: $('#time-cur'),
   dur: $('#time-dur'),
@@ -23,6 +21,10 @@ const els = {
   add: $('#add-btn'),
   download: $('#download-btn'),
   lyrics: $('#lyrics-btn'),
+  queue: $('#queue-btn'),
+  share: $('#share-btn'),
+  login: $('#login-btn'),
+  avatar: $('#avatar-btn'),
   volume: $('#volume'),
   mute: $('#mute-btn'),
   mini: $('#mini'),
@@ -45,33 +47,11 @@ function setIcon(btn, name) {
   btn.querySelector('use').setAttribute('href', `#i-${name}`);
 }
 
+// Цвет обложки окрашивает только фон; кнопки всегда в фирменном цвете
 function applyPalette(color) {
-  const { tc, accent } = paletteFrom(color);
-  document.documentElement.style.setProperty('--tc', tc);
-  document.documentElement.style.setProperty('--accent', accent);
+  document.documentElement.style.setProperty('--tc', paletteFrom(color).tc);
   document.querySelector('meta[name="theme-color"]').content = color || '#0b0a10';
 }
-
-function setTicker(text) {
-  els.tickerText.textContent = text;
-  els.ticker.classList.remove('is-running');
-  const track = els.ticker.firstElementChild;
-  track.querySelectorAll('[data-clone]').forEach((n) => n.remove());
-  requestAnimationFrame(() => {
-    if (els.tickerText.offsetWidth > els.ticker.clientWidth) {
-      const clone = els.tickerText.cloneNode(true);
-      clone.removeAttribute('id');
-      clone.dataset.clone = '';
-      track.append(clone);
-      els.ticker.style.setProperty('--ticker-time', `${Math.max(8, text.length * 0.35)}s`);
-      els.ticker.classList.add('is-running');
-    }
-  });
-}
-
-new ResizeObserver(() => {
-  if (player.current) setTicker(`${player.current.artist} — ${player.current.title}`);
-}).observe(els.ticker);
 
 function renderTrack() {
   const t = player.current;
@@ -88,7 +68,6 @@ function renderTrack() {
   els.miniArtist.textContent = t.artist;
   els.lyrics.disabled = !t.hasLyrics;
   document.title = `${t.artist} — ${t.title} · YouMusic`;
-  setTicker(`${t.artist} — ${t.title}`);
   applyPalette(t.color);
   renderLike();
   buildWave();
@@ -104,7 +83,21 @@ function renderLike() {
     setIcon(btn, liked ? 'heart-fill' : 'heart');
     btn.setAttribute('aria-pressed', String(liked));
   }
+  els.like.querySelector('span').textContent = liked ? 'В любимом' : 'Нравится';
 }
+
+/* Шапка: «Войти» или кружок профиля */
+async function renderAuth() {
+  const user = await account.user().catch(() => null);
+  els.login.hidden = !!user || !configured;
+  els.avatar.hidden = !user;
+  if (user) {
+    const name = account.nickname(user);
+    els.avatar.textContent = name.slice(0, 1).toUpperCase();
+    els.avatar.title = name;
+  }
+}
+account.onChange(renderAuth);
 
 function renderState() {
   const playing = player.playing;
@@ -248,6 +241,42 @@ els.download.addEventListener('click', async () => {
   }
 });
 els.lyrics.addEventListener('click', () => openLyrics());
+els.queue.addEventListener('click', () => openQueue());
+els.share.addEventListener('click', async () => {
+  const t = player.current;
+  if (!t) return;
+  const url = `${location.href.split('#')[0]}#/track/${t.id}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `${t.artist} — ${t.title}`, text: `Слушай «${t.title}» на YouMusic`, url });
+    } else {
+      await navigator.clipboard.writeText(url);
+      toast('Ссылка скопирована');
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Не удалось поделиться');
+  }
+});
+
+function openQueue() {
+  const q = player.queue;
+  if (!q.length) return toast('Очередь пуста');
+  const sheet = openSheet(`
+    <h2 class="sheet__title">Очередь</h2>
+    <div class="list">${q.map((t, i) => `
+      <button class="sheet__item ${i === player.index ? 'is-current' : ''}" data-q="${i}">
+        <span class="row__art" style="--c:${esc(t.color)}">${t.cover ? `<img src="${t.cover}" alt="">` : ''}</span>
+        <span>${esc(t.title)}<small>${esc(t.artist)}</small></span>
+        <small>${i === player.index ? 'играет' : fmtTime(t.duration)}</small>
+      </button>`).join('')}</div>`);
+  sheet.el.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-q]');
+    if (!item) return;
+    player.jump(Number(item.dataset.q));
+    sheet.close();
+  });
+  sheet.el.querySelector('.is-current')?.scrollIntoView({ block: 'center' });
+}
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -632,7 +661,7 @@ function mixCard(key, label, title, tracks) {
       <span class="mix__covers">${covers.map((t) => `<img src="${t.cover}" alt="" loading="lazy">`).join('')}</span>
       <span class="mix__label">${active ? 'Вернуться' : label}</span>
       <span class="mix__title">${esc(title)}</span>
-      <span class="mix__play">${icon('play')}</span>
+      <span class="mix__play">${icon('play')}${active ? 'Продолжить' : 'Слушать'}</span>
     </button>`;
 }
 
@@ -644,10 +673,34 @@ async function viewHome() {
         : 'Сайт ещё не подключён к Supabase — см. инструкцию в README',
       configured ? `<a class="btn btn--accent" href="#/account">${icon('plus')}Загрузить музыку</a>` : '');
   }
+  // открыли ссылку «Поделиться» — ставим этот трек первым
+  if (route.trackId) {
+    const shared = await api.track(route.trackId);
+    history.replaceState(null, '', '#/');
+    if (shared) {
+      player.source = null;
+      player.setQueue([shared, ...feed.wave.filter((t) => t.id !== shared.id)], 0, { autoplay: false });
+      toast('Нажми «Слушать»');
+    } else {
+      toast('Трек не найден — возможно, его удалили');
+    }
+  }
   if (!player.current) {
     player.source = 'mix:wave';
     player.setQueue(feed.wave, 0, { autoplay: false });
   }
+  const user = configured ? await account.user().catch(() => null) : null;
+  const banner = configured && !user ? `
+    <section class="promo">
+      <div>
+        <h2 class="promo__title">Загружай свою музыку</h2>
+        <p class="promo__text">Зарегистрируйся — и твои треки появятся здесь. Мат и запрещённые темы вырежет нейросеть.</p>
+      </div>
+      <div class="promo__actions">
+        <a class="btn btn--accent" href="#/account?mode=signup">${icon('user')}Регистрация</a>
+        <a class="btn btn--ghost" href="#/account">Войти</a>
+      </div>
+    </section>` : '';
   const mins = Math.max(1, Math.round((feed.nextRefresh - Date.now()) / 60000));
   const mixes = [
     mixCard('mix:wave', 'Слушать', 'Моя волна', feed.wave),
@@ -666,6 +719,7 @@ async function viewHome() {
 
 
   return `
+    ${banner}
     <section>
       <div class="section__head">
         <h2 class="section__title">Подборки для тебя</h2>
@@ -790,6 +844,8 @@ function parseRoute() {
   const [name, id] = path.split('/');
   const params = new URLSearchParams(query);
   if (name === 'playlist' && id) return { name: 'playlist', id };
+  if (name === 'track' && id) return { name: 'home', trackId: id };
+  if (name === 'account') return { name, mode: params.get('mode') };
   if (VIEWS[name]) return { name, q: params.get('q') || '' };
   return { name: 'home' };
 }
@@ -813,7 +869,7 @@ async function render() {
   closeLyrics();
   updateChrome();
   try {
-    const html = await VIEWS[route.name]();
+    const html = await VIEWS[route.name](route);
     if (id !== renderId) return;
     for (const key of [...lists.keys()]) {
       if (!html.includes(`"${esc(key)}"`)) lists.delete(key);
@@ -846,6 +902,7 @@ renderVolume();
 renderState();
 player.restore();
 render();
+renderAuth();
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

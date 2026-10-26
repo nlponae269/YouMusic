@@ -5,7 +5,8 @@ name: Process uploads
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # не «круглые» минуты: в начале часа GitHub перегружен и задерживает запуски
+    - cron: "4,14,24,34,44,54 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -28,10 +29,16 @@ jobs:
             echo "::warning::Не заданы SUPABASE_URL (переменная) и SUPABASE_SERVICE_KEY (секрет)"
             echo "work=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          body=$(curl -sf "$SUPABASE_URL/rest/v1/tracks?select=id&status=in.(pending,processing)&limit=1" \
-            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY")
-          if [ "$body" = "[]" ]; then echo "Очередь пуста"; echo "work=false" >> "$GITHUB_OUTPUT"
-          else echo "work=true" >> "$GITHUB_OUTPUT"; fi
+          q() { curl -sf "$SUPABASE_URL/rest/v1/$1" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY"; }
+          queue=$(q "tracks?select=id&status=in.(pending,processing)&limit=1")
+          lyrics=$(q "tracks?select=id&status=eq.ready&has_lyrics=eq.false&error=is.null&limit=1")
+          admins=$(q "admins?select=user_id&limit=1")
+          failed=$(q "tracks?select=id&status=eq.failed&created_at=lt.$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)&limit=1")
+          if [ "$queue$lyrics$failed" = "[][][]" ] && [ "$admins" != "[]" ]; then
+            echo "Делать нечего"; echo "work=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Очередь: $queue, без текста: $lyrics, админ: $admins"; echo "work=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/checkout@v4
         if: steps.queue.outputs.work == 'true'
