@@ -25,7 +25,11 @@
 
 Сервер не прокачивает аудио через себя: `/api/tracks/:id/stream` отвечает редиректом на подписанную ссылку Object Storage, поэтому перемотка работает нативно, а контейнер почти не нагружается.
 
-## Деплой в Yandex Cloud
+## Деплой с телефона (GitHub Pages + Yandex Cloud)
+
+Пошаговая инструкция без компьютера: **[docs/phone-setup.md](docs/phone-setup.md)**. Сайт выкладывается на GitHub Pages, сервер — в Yandex Cloud, всё собирает GitHub Actions по кнопке **Run workflow**.
+
+## Деплой в Yandex Cloud с компьютера
 
 Нужно: [yc CLI](https://yandex.cloud/ru/docs/cli/quickstart) (выполнен `yc init`), Docker, `jq`, Node.js 20+.
 
@@ -62,6 +66,7 @@ docker compose exec app npm run seed   # демо-треки
 | `S3_FORCE_PATH_STYLE` | `true` для MinIO |
 | `ADMIN_TOKEN` | пароль админки |
 | `PORT` | порт, по умолчанию 8080 (Serverless Containers задают сами) |
+| `CORS_ORIGINS` | откуда разрешены запросы к API, через запятую (по умолчанию `*`) |
 
 ## Тексты песен
 

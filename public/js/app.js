@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { api, apiUrl } from './api.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
 
@@ -77,8 +77,8 @@ function renderTrack() {
   if (!t) return;
   els.art.classList.add('is-loading');
   els.art.onload = () => els.art.classList.remove('is-loading');
-  els.art.src = t.cover || '/icon.svg';
-  els.miniArt.src = t.cover || '/icon.svg';
+  els.art.src = t.cover || 'icon.svg';
+  els.miniArt.src = t.cover || 'icon.svg';
   els.title.textContent = t.title;
   els.title.title = t.title;
   els.artist.textContent = t.artist;
@@ -231,7 +231,7 @@ els.download.addEventListener('click', () => {
   const t = player.current;
   if (!t) return;
   const a = document.createElement('a');
-  a.href = `/api/tracks/${t.id}/download`;
+  a.href = apiUrl(`/api/tracks/${t.id}/download`);
   a.download = '';
   a.click();
   toast('Скачивание началось');
@@ -510,7 +510,7 @@ async function openLyrics() {
   el.setAttribute('role', 'dialog');
   el.innerHTML = `
     <div class="lyrics__head">
-      <img src="${t.cover || '/icon.svg'}" alt="">
+      <img src="${t.cover || 'icon.svg'}" alt="">
       <div><b>${esc(t.title)}</b><small>${esc(t.artist)}</small></div>
       <button class="icon-btn" data-close aria-label="Закрыть">${icon('chevron-down')}</button>
     </div>
@@ -630,7 +630,7 @@ async function viewHome() {
   if (!feed.wave.length) {
     return emptyState('wave', 'Здесь пока тихо',
       'Загрузите первые треки через панель администратора',
-      '<a class="btn btn--accent" href="/admin.html">Открыть админку</a>');
+      '<a class="btn btn--accent" href="admin.html">Открыть админку</a>');
   }
   if (!player.current) {
     player.source = 'mix:wave';
@@ -832,5 +832,5 @@ player.restore();
 render();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').catch(() => {});
 }

@@ -13,6 +13,8 @@ const s3Endpoint = env.S3_ENDPOINT || 'https://storage.yandexcloud.net';
 export const config = {
   port: Number(env.PORT || 8080),
   adminToken: env.ADMIN_TOKEN || '',
+  // откуда разрешены запросы к API, через запятую; * — отовсюду
+  corsOrigins: (env.CORS_ORIGINS || '*').split(',').map((s) => s.trim()).filter(Boolean),
   db: {
     connectionString: required('DATABASE_URL'),
     // Managed PostgreSQL в Yandex Cloud требует SSL с корневым сертификатом Яндекса

@@ -1,6 +1,6 @@
 // Кэшируем только оболочку приложения; API и аудио всегда идут в сеть
-const CACHE = 'youmusic-shell-v1';
-const SHELL = ['/', '/styles.css', '/js/app.js', '/js/api.js', '/js/player.js', '/js/util.js', '/icon.svg', '/manifest.webmanifest'];
+const CACHE = 'youmusic-shell-v2';
+const SHELL = ['./', 'styles.css', 'config.js', 'js/app.js', 'js/api.js', 'js/player.js', 'js/util.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -25,6 +25,6 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match('/'))),
+      .catch(() => caches.match(e.request).then((r) => r || caches.match('./'))),
   );
 });

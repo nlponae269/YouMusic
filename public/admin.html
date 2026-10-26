@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>YouMusic · Загрузка</title>
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="styles.css">
   <style>
     .admin { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; display: grid; gap: 24px; }
     .admin header { display: flex; align-items: center; gap: 14px; }
@@ -61,7 +61,7 @@
 
   <div class="admin">
     <header>
-      <a class="logo" href="/"><span class="logo__mark"><svg><use href="#i-wave"/></svg></span></a>
+      <a class="logo" href="./"><span class="logo__mark"><svg><use href="#i-wave"/></svg></span></a>
       <h1>Загрузка музыки</h1>
       <button class="btn btn--ghost" id="logout" hidden>Выйти</button>
     </header>
@@ -97,6 +97,7 @@
     </section>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/js/admin.js"></script>
+  <script src="config.js"></script>
+  <script type="module" src="js/admin.js"></script>
 </body>
 </html>

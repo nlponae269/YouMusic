@@ -1,0 +1,157 @@
+# Деплой без компьютера: сервер — в Yandex Serverless Containers, сайт — на GitHub Pages.
+# Запуск: вкладка Actions → Deploy → Run workflow (или пуш в main).
+# Нужные секреты описаны в docs/phone-setup.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Залить демо-треки (только если каталог пуст)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  NAME: youmusic
+
+jobs:
+  backend:
+    name: Сервер → Yandex Cloud
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка секретов
+        env:
+          YC_SA_KEY: ${{ secrets.YC_SA_KEY }}
+          YC_FOLDER_ID: ${{ secrets.YC_FOLDER_ID }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          missing=0
+          for name in YC_SA_KEY YC_FOLDER_ID DB_PASSWORD S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY ADMIN_TOKEN; do
+            if [ -z "${!name}" ]; then echo "::error::Не задан секрет $name"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Установка yc CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -i "$HOME/yc" -n
+          echo "$HOME/yc/bin" >> "$GITHUB_PATH"
+
+      - name: Вход в Yandex Cloud
+        env:
+          YC_SA_KEY: ${{ secrets.YC_SA_KEY }}
+        run: |
+          printf '%s' "$YC_SA_KEY" > "$RUNNER_TEMP/key.json"
+          yc config set service-account-key "$RUNNER_TEMP/key.json"
+          yc config set folder-id "${{ secrets.YC_FOLDER_ID }}"
+          docker login --username json_key --password-stdin cr.yandex < "$RUNNER_TEMP/key.json"
+
+      - name: Сборка и загрузка образа
+        id: image
+        run: |
+          REG_ID="$(yc container registry get "$NAME" --format json 2>/dev/null | jq -r .id || true)"
+          [ -n "$REG_ID" ] || REG_ID="$(yc container registry create --name "$NAME" --format json | jq -r .id)"
+          IMAGE="cr.yandex/$REG_ID/$NAME:${GITHUB_SHA::12}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Адрес базы данных
+        id: db
+        run: |
+          PG_ID="$(yc managed-postgresql cluster get "$NAME-pg" --format json 2>/dev/null | jq -r .id || true)"
+          if [ -z "$PG_ID" ]; then
+            echo "::error::Кластер PostgreSQL «$NAME-pg» не найден. Создайте его по инструкции docs/phone-setup.md"
+            exit 1
+          fi
+          echo "host=c-$PG_ID.rw.mdb.yandexcloud.net" >> "$GITHUB_OUTPUT"
+
+      - name: Выкатка Serverless Container
+        id: deploy
+        env:
+          DATABASE_URL: postgres://${{ env.NAME }}:${{ secrets.DB_PASSWORD }}@${{ steps.db.outputs.host }}:6432/${{ env.NAME }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          SA_ID="$(jq -r .service_account_id "$RUNNER_TEMP/key.json")"
+          BUCKET="$NAME-${{ secrets.YC_FOLDER_ID }}"
+          yc serverless container get "$NAME" >/dev/null 2>&1 || yc serverless container create --name "$NAME" >/dev/null
+          yc serverless container revision deploy \
+            --container-name "$NAME" \
+            --image "${{ steps.image.outputs.image }}" \
+            --service-account-id "$SA_ID" \
+            --cores 1 --core-fraction 100 --memory 512MB \
+            --concurrency 16 \
+            --execution-timeout 60s \
+            --environment "DATABASE_URL=$DATABASE_URL,S3_BUCKET=$BUCKET,S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID,S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY,ADMIN_TOKEN=$ADMIN_TOKEN" \
+            >/dev/null
+          yc serverless container allow-unauthenticated-invoke "$NAME" >/dev/null \
+            || echo "::warning::Не удалось сделать контейнер публичным: дайте сервисному аккаунту роль serverless.containers.admin или включите «Публичный контейнер» в консоли"
+          URL="$(yc serverless container get "$NAME" --format json | jq -r .url)"
+          URL="${URL%/}"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "### Сервер: $URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Бакет и CORS
+        env:
+          S3_BUCKET: ${{ steps.deploy.outputs.bucket }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          DATABASE_URL: postgres://unused
+        run: |
+          npm ci --omit=dev
+          node scripts/setup-bucket.js "${{ steps.deploy.outputs.url }}" "https://${{ github.repository_owner }}.github.io"
+
+      - name: Демо-треки
+        if: inputs.seed
+        env:
+          DATABASE_URL: postgres://${{ env.NAME }}:${{ secrets.DB_PASSWORD }}@${{ steps.db.outputs.host }}:6432/${{ env.NAME }}
+          PGSSLROOTCERT: ${{ runner.temp }}/yandex-ca.pem
+          S3_BUCKET: ${{ steps.deploy.outputs.bucket }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          curl -sSfo "$PGSSLROOTCERT" https://storage.yandexcloud.net/cloud-certs/CA.pem
+          node scripts/seed.js
+
+  pages:
+    name: Сайт → GitHub Pages
+    needs: backend
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Адрес сервера в config.js
+        run: echo "window.YOUMUSIC_API = '${{ needs.backend.outputs.url }}';" > public/config.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

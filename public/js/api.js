@@ -10,8 +10,25 @@ function clientId() {
 
 const CLIENT_ID = clientId();
 
+// Адрес сервера задаётся в config.js; пусто — тот же домен
+export const API_BASE = String(window.YOUMUSIC_API || '').replace(/\/$/, '');
+
+export function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+// Сервер отдаёт ссылки вида /api/…; если фронт живёт на другом домене, дописываем адрес сервера
+function absolutize(value) {
+  if (typeof value === 'string') return value.startsWith('/api/') ? apiUrl(value) : value;
+  if (Array.isArray(value)) return value.map(absolutize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, absolutize(v)]));
+  }
+  return value;
+}
+
 async function request(method, url, body) {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     method,
     headers: {
       'X-Client-Id': CLIENT_ID,
@@ -23,7 +40,7 @@ async function request(method, url, body) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `Ошибка ${res.status}`);
   }
-  return res.status === 204 ? null : res.json();
+  return res.status === 204 ? null : absolutize(await res.json());
 }
 
 export const api = {

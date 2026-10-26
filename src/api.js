@@ -38,6 +38,21 @@ class HttpError extends Error {
   }
 }
 
+// Фронтенд может жить на другом домене (GitHub Pages) — разрешаем CORS. Куки не используются.
+api.use((req, res, next) => {
+  const allowed = config.corsOrigins;
+  const origin = req.get('origin');
+  if (origin && (allowed.includes('*') || allowed.includes(origin))) {
+    res.set('Access-Control-Allow-Origin', allowed.includes('*') ? '*' : origin);
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-Client-Id, Authorization');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.set('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
 // Анонимный идентификатор устройства: лайки и плейлисты привязаны к нему
 api.use((req, _res, next) => {
   const id = req.get('x-client-id');

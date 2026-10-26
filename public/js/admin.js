@@ -1,10 +1,11 @@
 import { $, esc, fmtTime, toast, store } from './util.js';
+import { apiUrl } from './api.js';
 
 let token = store('admin-token') || '';
 const items = [];
 
 async function adminFetch(method, url, body) {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     method,
     headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
@@ -342,11 +343,11 @@ drop.addEventListener('drop', (e) => {
 let libTimer;
 async function loadLibrary() {
   const q = $('#lib-search').value.trim();
-  const res = await fetch(`/api/tracks?limit=100&q=${encodeURIComponent(q)}`);
+  const res = await fetch(apiUrl(`/api/tracks?limit=100&q=${encodeURIComponent(q)}`));
   const tracks = await res.json();
   $('#lib-list').innerHTML = tracks.map((t) => `
     <div class="row" data-id="${t.id}">
-      <span class="row__art" style="--c:${esc(t.color)}">${t.cover ? `<img src="${t.cover}" alt="" loading="lazy">` : ''}</span>
+      <span class="row__art" style="--c:${esc(t.color)}">${t.cover ? `<img src="${apiUrl(t.cover)}" alt="" loading="lazy">` : ''}</span>
       <span class="row__meta"><span class="row__title">${esc(t.title)}</span><span class="row__artist">${esc(t.artist)} · ${t.plays} прослушиваний</span></span>
       <span class="row__time">${fmtTime(t.duration)}</span>
       <button class="row__btn" data-del aria-label="Удалить"><svg><use href="#i-trash"/></svg></button>
