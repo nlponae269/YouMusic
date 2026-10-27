@@ -77,13 +77,13 @@ function toTrack(s) {
 }
 
 /**
- * Рекомендации: треки артистов-«семян», которых нет в каталоге.
- * seeds — ссылки на треки SoundCloud (сначала самые важные: лайки, прослушивания).
+ * Рекомендации: треки из плейлиста SoundCloud (если указан) и треки артистов-«семян»,
+ * которых нет в каталоге. seeds — ссылки на треки SoundCloud (лайки, прослушивания).
  */
-export async function soundcloudRecs(seeds, known) {
-  const artists = [...new Set(seeds.map(artistUrl).filter(Boolean))].slice(0, MAX_ARTISTS);
-  if (!artists.length) return [];
-  const key = artists.join('|');
+export async function soundcloudRecs(seeds, known, playlist = null) {
+  let artists = [...new Set(seeds.map(artistUrl).filter(Boolean))].slice(0, MAX_ARTISTS);
+  if (!artists.length && !playlist) return [];
+  const key = `${playlist || ''}#${artists.join('|')}`;
   const cached = store('screcs');
   if (cached?.key === key && Date.now() - cached.at < CACHE_TTL) {
     return cached.tracks.filter((t) => !known.has(t.soundcloud));
@@ -94,17 +94,26 @@ export async function soundcloudRecs(seeds, known) {
   } catch {
     return [];
   }
-  const perArtist = [];
-  for (const url of artists) {
-    const sounds = await artistSounds(SC, url);
-    // у части треков плеер отдаёт только номер, без названия — такие пропускаем
-    perArtist.push(sounds.filter((s) => s.title && s.permalink_url && s.streamable !== false).map(toTrack));
+  // у части треков плеер отдаёт только номер, без названия — такие пропускаем
+  const usable = (sounds) => sounds.filter((s) => s.title && s.permalink_url && s.streamable !== false).map(toTrack);
+  const sources = [];
+  if (playlist) {
+    const own = usable(await artistSounds(SC, playlist));
+    // перемешиваем, чтобы волна каждый раз начиналась по-разному
+    for (let i = own.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [own[i], own[j]] = [own[j], own[i]];
+    }
+    sources.push(own);
+    // артисты из плейлиста — источник «ещё от этих артистов»
+    artists = [...new Set([...artists, ...own.map((t) => artistUrl(t.soundcloud))])].slice(0, MAX_ARTISTS);
   }
-  // чередуем артистов по кругу, чтобы подряд не шли треки одного, и убираем повторы
+  for (const url of artists) sources.push(usable(await artistSounds(SC, url)));
+  // чередуем источники по кругу, чтобы подряд не шли треки одного артиста, и убираем повторы
   const seen = new Set();
   const tracks = [];
-  for (let i = 0; perArtist.some((list) => i < list.length); i++) {
-    for (const list of perArtist) {
+  for (let i = 0; sources.some((list) => i < list.length); i++) {
+    for (const list of sources) {
       const t = list[i];
       if (t && !seen.has(t.soundcloud)) {
         seen.add(t.soundcloud);
@@ -112,7 +121,7 @@ export async function soundcloudRecs(seeds, known) {
       }
     }
   }
-  tracks.splice(40);
+  tracks.splice(60);
   store('screcs', { key, at: Date.now(), tracks });
   return tracks.filter((t) => !known.has(t.soundcloud));
 }

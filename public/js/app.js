@@ -3,7 +3,7 @@ import { viewAccount, mountAccount } from './account.js';
 import { viewCreate, mountCreate } from './create.js';
 import { soundcloudRecs } from './scwave.js';
 import { player } from './player.js';
-import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast } from './util.js';
+import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast, store } from './util.js';
 
 const els = {
   player: $('#player'),
@@ -930,20 +930,60 @@ function updateChrome() {
   });
 }
 
-/* Рекомендации SoundCloud: подгружаются после показа главной, чтобы её не задерживать */
-const STARTER_ARTISTS = ['https://soundcloud.com/chillhopdotcom', 'https://soundcloud.com/lofi_girl'];
+/* Рекомендации SoundCloud: подгружаются после показа главной, чтобы её не задерживать.
+   Источник — плейлист SoundCloud, который человек подключил сам (или общий по умолчанию),
+   плюс артисты SoundCloud из его лайков и прослушиваний. */
+const DEFAULT_SC_PLAYLIST = '';
+
+function scPlaylist() {
+  return store('scPlaylist') || DEFAULT_SC_PLAYLIST || null;
+}
+
+function playlistForm(slot, text) {
+  slot.innerHTML = `
+    <div class="section__head"><h2 class="section__title">Рекомендации SoundCloud</h2></div>
+    <form class="panel sc-connect">
+      <p class="section__hint">${text}</p>
+      <div class="sc-row">
+        <input class="field" name="url" type="url" required placeholder="https://soundcloud.com/ты/sets/плейлист">
+        <button class="btn btn--primary">Подключить</button>
+      </div>
+    </form>`;
+  slot.hidden = false;
+  slot.querySelector('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    let u;
+    try { u = new URL(e.target.url.value.trim()); } catch { return toast('Это не ссылка'); }
+    if (!/(^|\.)soundcloud\.com$/.test(u.hostname) || !u.pathname.includes('/sets/')) {
+      return toast('Нужна ссылка на плейлист SoundCloud (в ней есть /sets/)');
+    }
+    store('scPlaylist', `https://soundcloud.com${u.pathname.replace(/\/$/, '')}`);
+    toast('Плейлист подключён — собираю волну');
+    slot.innerHTML = '<div class="skeleton" style="height:160px"></div>';
+    loadSoundcloudRecs(renderId);
+  });
+}
+
 async function loadSoundcloudRecs(id) {
   if (!configured) return;
-  const { seeds, known } = await api.soundcloudSeeds().catch(() => ({ seeds: [], known: new Set() }));
-  // пока в библиотеке нет треков SoundCloud — стартовая подборка из лоу-фай инструментала (без слов)
-  const starter = !seeds.length;
-  const recs = await soundcloudRecs(starter ? STARTER_ARTISTS : seeds, known);
   const slot = els.view.querySelector('[data-sc-recs]');
-  if (id !== renderId || !slot || !recs.length) return;
+  if (!slot) return;
+  const { seeds, known } = await api.soundcloudSeeds().catch(() => ({ seeds: [], known: new Set() }));
+  const playlist = scPlaylist();
+  if (!seeds.length && !playlist) {
+    playlistForm(slot, 'Вставь ссылку на свой плейлист SoundCloud — «Моя волна» будет подмешивать треки из него и похожие от тех же артистов.');
+    return;
+  }
+  const recs = await soundcloudRecs(seeds, known, playlist);
+  if (id !== renderId || !slot.isConnected) return;
+  if (!recs.length) {
+    playlistForm(slot, 'Не получилось загрузить плейлист: проверь, что он открытый, или вставь другую ссылку.');
+    return;
+  }
   // подмешиваем в «Мою волну»: каждый третий трек — рекомендация SoundCloud
   const mix = (queue, from) => {
     const have = new Set(queue.map((t) => t.id));
-    recs.slice(0, 15).filter((t) => !have.has(t.id))
+    recs.slice(0, 20).filter((t) => !have.has(t.id))
       .forEach((t, i) => queue.splice(Math.min(queue.length, from + 2 + i * 3), 0, t));
   };
   const wave = lists.get('mix:wave');
@@ -952,9 +992,13 @@ async function loadSoundcloudRecs(id) {
   if (player.source === 'mix:wave' && player.queue.length) mix(player.queue, player.index);
   slot.innerHTML = `
     <div class="section__head"><h2 class="section__title">Рекомендации SoundCloud</h2>
-      <span class="section__hint">${starter ? 'лоу-фай для старта — лайкай, и волна подстроится' : 'похоже на то, что ты слушаешь'}</span></div>
+      <span class="section__hint">${playlist ? 'из твоего плейлиста и похожее' : 'похоже на то, что ты слушаешь'}</span>
+      <button class="chip" data-sc-change>${playlist ? 'Сменить плейлист' : 'Подключить плейлист'}</button></div>
     ${trackRows('home:sc', recs.slice(0, 10))}`;
   slot.hidden = false;
+  slot.querySelector('[data-sc-change]').addEventListener('click', () => {
+    playlistForm(slot, 'Вставь ссылку на плейлист SoundCloud, из которого собирать волну.');
+  });
   renderRows();
 }
 

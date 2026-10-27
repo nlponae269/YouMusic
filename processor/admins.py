@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.request
 
 # sha256(почта владельца в нижнем регистре)
@@ -46,6 +47,9 @@ def main():
         if len(batch) < 1000:
             break
         page += 1
+    # статистика для владельца: сколько людей зарегистрировалось (без почт и имён)
+    day_ago = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - 86400))
+    print(f"Пользователей: {len(users)}, новых за сутки: {sum((u.get('created_at') or '') > day_ago for u in users)}")
     owners = {u["id"]: u.get("email") for u in users
               if hashlib.sha256((u.get("email") or "").strip().lower().encode()).hexdigest() in OWNER_EMAIL_SHA256}
     current = {r["user_id"] for r in call("GET", "/rest/v1/admins?select=user_id") or []}
