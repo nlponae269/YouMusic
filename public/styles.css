@@ -529,19 +529,8 @@ img { display: block; }
 .upload-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 600px) { .create__row { grid-template-columns: 1fr; } }
 
-/* ---------- SoundCloud ---------- */
-.np__art { position: relative; }
-.np__sc { display: none; position: absolute; inset: 0; border-radius: var(--r-xl); overflow: hidden; background: #111; }
-.np.is-sc .np__sc { display: block; }
-.np.is-sc .np__art img { visibility: hidden; }
-.sc-frame { width: 100%; height: 100%; border: 0; display: block; }
-.np__source { display: inline-block; margin-left: 12px; color: #ff7a2f; font-size: 14px; font-weight: 700; }
-.badge {
-  display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 6px; vertical-align: 1px;
-  background: rgba(255, 122, 47, .16); color: #ff9a5c; font-size: 11px; font-weight: 800;
-}
-.sc-row { display: flex; gap: 8px; }
-.sc-row .field { flex: 1; min-width: 0; }
+/* ---------- Источник трека (лицензия Creative Commons) ---------- */
+.np__source { display: inline-block; margin-left: 12px; color: var(--text-2); font-size: 14px; font-weight: 700; }
+.np__source:hover { color: var(--text); }
 .action:disabled { opacity: .35; cursor: default; }
 .section__head .chip { margin-left: auto; }
-.sc-connect { gap: 12px; }

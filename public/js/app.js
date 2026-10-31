@@ -1,7 +1,6 @@
 import { api, account, configured } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
 import { viewCreate, mountCreate } from './create.js';
-import { soundcloudRecs } from './scwave.js';
 import { player } from './player.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast, store } from './util.js';
 
@@ -74,12 +73,13 @@ function renderTrack() {
   els.miniTitle.textContent = t.title;
   els.miniArtist.textContent = t.artist;
   els.lyrics.disabled = !t.hasLyrics;
-  // треки SoundCloud играют в их плеере; скачать их нельзя
-  const sc = !!t.soundcloud;
-  els.player.classList.toggle('is-sc', sc);
-  els.download.disabled = sc;
-  $('#sc-link').hidden = !sc;
-  if (sc) $('#sc-link').href = t.soundcloud;
+  // треки из открытой библиотеки ccMixter: ссылка на оригинал и лицензию (условие CC BY)
+  const source = $('#source-link');
+  source.hidden = !t.source;
+  if (t.source) {
+    source.href = t.source;
+    source.textContent = `${t.album || 'ccMixter'} ↗`;
+  }
   document.title = `${t.artist} — ${t.title} · YouMusic`;
   applyPalette(t.color);
   renderLike();
@@ -216,11 +216,6 @@ player.addEventListener('time', renderTime);
 player.addEventListener('mode', renderMode);
 player.addEventListener('volume', renderVolume);
 player.addEventListener('error', () => toast('Не удалось загрузить трек'));
-// на телефонах SoundCloud иногда требует нажать ▶ внутри своего плеера
-player.addEventListener('needgesture', () => {
-  openPlayer();
-  toast('Нажми ▶ в плеере SoundCloud');
-});
 
 els.play.addEventListener('click', () => player.toggle());
 els.miniPlay.addEventListener('click', () => player.toggle());
@@ -321,14 +316,8 @@ async function toggleLike(track) {
   };
   sync(liked);
   try {
-    await api.like(track.id, liked, track);
-    // лайкнул рекомендацию SoundCloud — она сама попадает в общую библиотеку для всех
-    if (liked && track.external && (await account.user().catch(() => null))) {
-      account.requestSoundcloud(track.soundcloud).catch(() => {});
-      toast('В любимом и в библиотеке YouMusic');
-    } else {
-      toast(liked ? 'Добавлено в любимое' : 'Убрано из любимого');
-    }
+    await api.like(track.id, liked);
+    toast(liked ? 'Добавлено в любимое' : 'Убрано из любимого');
     if (route.name === 'liked' && !liked) render();
   } catch (err) {
     sync(!liked);
@@ -348,7 +337,7 @@ function trackRows(key, tracks, { removable = false } = {}) {
       </span>
       <span class="row__meta">
         <span class="row__title">${esc(t.title)}</span>
-        <span class="row__artist">${t.soundcloud ? '<span class="badge">SoundCloud</span>' : ''}${esc(t.artist)}</span>
+        <span class="row__artist">${esc(t.artist)}</span>
       </span>
       <span class="row__time">${fmtTime(t.duration)}</span>
       <span class="row__actions">
@@ -452,7 +441,7 @@ async function openPlaylistPicker(track) {
 
   async function add(playlistId, el) {
     try {
-      const { added } = await api.addToPlaylist(playlistId, track.id, track);
+      const { added } = await api.addToPlaylist(playlistId, track.id);
       el?.querySelector('[data-mark]')?.classList.add('is-done');
       toast(added ? 'Добавлено в плейлист' : 'Трек уже в плейлисте');
       setTimeout(sheet.close, 350);
@@ -769,7 +758,6 @@ async function viewHome() {
       </div>
       <div class="rail">${mixes}</div>
     </section>
-    <section data-sc-recs hidden></section>
     ${playlists}
     <section>
       <div class="section__head"><h2 class="section__title">Новое</h2></div>
@@ -930,78 +918,6 @@ function updateChrome() {
   });
 }
 
-/* Рекомендации SoundCloud: подгружаются после показа главной, чтобы её не задерживать.
-   Источник — плейлист SoundCloud, который человек подключил сам (или общий по умолчанию),
-   плюс артисты SoundCloud из его лайков и прослушиваний. */
-const DEFAULT_SC_PLAYLIST = '';
-
-function scPlaylist() {
-  return store('scPlaylist') || DEFAULT_SC_PLAYLIST || null;
-}
-
-function playlistForm(slot, text) {
-  slot.innerHTML = `
-    <div class="section__head"><h2 class="section__title">Рекомендации SoundCloud</h2></div>
-    <form class="panel sc-connect">
-      <p class="section__hint">${text}</p>
-      <div class="sc-row">
-        <input class="field" name="url" type="url" required placeholder="https://soundcloud.com/ты/sets/плейлист">
-        <button class="btn btn--primary">Подключить</button>
-      </div>
-    </form>`;
-  slot.hidden = false;
-  slot.querySelector('form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    let u;
-    try { u = new URL(e.target.url.value.trim()); } catch { return toast('Это не ссылка'); }
-    if (!/(^|\.)soundcloud\.com$/.test(u.hostname) || !u.pathname.includes('/sets/')) {
-      return toast('Нужна ссылка на плейлист SoundCloud (в ней есть /sets/)');
-    }
-    store('scPlaylist', `https://soundcloud.com${u.pathname.replace(/\/$/, '')}`);
-    toast('Плейлист подключён — собираю волну');
-    slot.innerHTML = '<div class="skeleton" style="height:160px"></div>';
-    loadSoundcloudRecs(renderId);
-  });
-}
-
-async function loadSoundcloudRecs(id) {
-  if (!configured) return;
-  const slot = els.view.querySelector('[data-sc-recs]');
-  if (!slot) return;
-  const { seeds, known } = await api.soundcloudSeeds().catch(() => ({ seeds: [], known: new Set() }));
-  const playlist = scPlaylist();
-  if (!seeds.length && !playlist) {
-    playlistForm(slot, 'Вставь ссылку на свой плейлист SoundCloud — «Моя волна» будет подмешивать треки из него и похожие от тех же артистов.');
-    return;
-  }
-  const recs = await soundcloudRecs(seeds, known, playlist);
-  if (id !== renderId || !slot.isConnected) return;
-  if (!recs.length) {
-    playlistForm(slot, 'Не получилось загрузить плейлист: проверь, что он открытый, или вставь другую ссылку.');
-    return;
-  }
-  // подмешиваем в «Мою волну»: каждый третий трек — рекомендация SoundCloud
-  const mix = (queue, from) => {
-    const have = new Set(queue.map((t) => t.id));
-    recs.slice(0, 20).filter((t) => !have.has(t.id))
-      .forEach((t, i) => queue.splice(Math.min(queue.length, from + 2 + i * 3), 0, t));
-  };
-  const wave = lists.get('mix:wave');
-  if (wave) mix(wave, 0);
-  // «Моя волна» уже стоит в плеере — добавляем и в его очередь, после текущего трека
-  if (player.source === 'mix:wave' && player.queue.length) mix(player.queue, player.index);
-  slot.innerHTML = `
-    <div class="section__head"><h2 class="section__title">Рекомендации SoundCloud</h2>
-      <span class="section__hint">${playlist ? 'из твоего плейлиста и похожее' : 'похоже на то, что ты слушаешь'}</span>
-      <button class="chip" data-sc-change>${playlist ? 'Сменить плейлист' : 'Подключить плейлист'}</button></div>
-    ${trackRows('home:sc', recs.slice(0, 10))}`;
-  slot.hidden = false;
-  slot.querySelector('[data-sc-change]').addEventListener('click', () => {
-    playlistForm(slot, 'Вставь ссылку на плейлист SoundCloud, из которого собирать волну.');
-  });
-  renderRows();
-}
-
 let renderId = 0;
 async function render() {
   const id = ++renderId;
@@ -1019,7 +935,6 @@ async function render() {
     if (route.name === 'account') mountAccount(els.view, render);
     if (route.name === 'create') mountCreate(els.view);
     if (route.name === 'search' && !route.q) $('#search-input')?.focus();
-    if (route.name === 'home') loadSoundcloudRecs(id);
   } catch (err) {
     if (id !== renderId) return;
     els.view.innerHTML = emptyState('close', 'Что-то пошло не так', esc(err.message),

@@ -62,16 +62,6 @@ export async function viewAccount(route = {}) {
         Текст песни найдётся сам в открытой базе текстов или будет записан нейросетью.</p>
     </section>
 
-    <form class="panel" id="sc-form">
-      <h2 class="section__title">Добавить из SoundCloud</h2>
-      <p class="section__hint">Вставь ссылку на трек — он будет играть у нас через официальный плеер SoundCloud.
-        Такие треки не проходят нашу цензуру и не скачиваются.</p>
-      <div class="sc-row">
-        <input class="field" name="url" type="url" required placeholder="https://soundcloud.com/артист/трек">
-        <button class="btn btn--primary">${icon('plus')}Добавить</button>
-      </div>
-    </form>
-
     <section>
       <div class="section__head"><h2 class="section__title">Мои треки</h2><span class="section__hint">${mine.length}</span></div>
       ${trackList(mine)}
@@ -102,9 +92,7 @@ function trackList(tracks, admin = false) {
   if (!tracks.length) return '<p class="section__hint">Пока ничего нет</p>';
   return `<div class="list">${tracks.map((t) => {
     const gen = (t.source_path || '').endsWith('.gen');
-    const sc = (t.source_path || '').endsWith('.sc');
-    const [label, cls] = sc && t.status === 'pending' ? ['Добавляется из SoundCloud…', '']
-      : gen && t.status === 'pending' ? ['В очереди на генерацию', '']
+    const [label, cls] = gen && t.status === 'pending' ? ['В очереди на генерацию', '']
       : gen && t.status === 'processing' ? ['Нейросеть сочиняет песню…', '']
         : STATUS[t.status] || [t.status, ''];
     const extra = t.status === 'ready' && t.censored ? ` · вырезано фрагментов: ${t.censored}`
@@ -145,21 +133,6 @@ export function mountAccount(root, rerender) {
         await account.signIn(f.get('email').trim(), f.get('password'));
         toast('Вход выполнен');
       }
-      rerender();
-    } catch (err) {
-      toast(err.message);
-      btn.disabled = false;
-    }
-  });
-
-  const scForm = $('#sc-form', root);
-  scForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = scForm.querySelector('button');
-    btn.disabled = true;
-    try {
-      await account.requestSoundcloud(scForm.url.value.trim());
-      toast('Добавлено! Трек появится через несколько минут');
       rerender();
     } catch (err) {
       toast(err.message);

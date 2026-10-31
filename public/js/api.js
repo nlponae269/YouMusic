@@ -13,10 +13,8 @@ function publicUrl(key) {
   return `${URL_BASE}/storage/v1/object/public/tracks/${key}`;
 }
 
-// обложка из нашего хранилища или внешняя (у треков SoundCloud)
 function mediaUrl(key) {
-  if (!key) return null;
-  return /^https:\/\//.test(key) ? key : publicUrl(key);
+  return key ? publicUrl(key) : null;
 }
 
 function load(key, fallback) {
@@ -49,6 +47,7 @@ async function catalog() {
   if (!catalogPromise || Date.now() - catalogAt > 60_000) {
     catalogAt = Date.now();
     catalogPromise = sb.from('tracks').select(TRACK_COLUMNS).eq('status', 'ready')
+      .not('audio_path', 'like', 'soundcloud:%')
       .order('published_at', { ascending: true }).limit(5000).then(check);
     catalogPromise.catch(() => { catalogPromise = null; });
   }
@@ -71,10 +70,10 @@ function view(t, likes) {
     liked: likes.includes(t.id),
     hasLyrics: !!t.has_lyrics,
     uploader: t.uploader || null,
+    // автозагрузка из ccMixter: uploader = «ccmixter:<автор>/<номер>»
+    source: t.uploader?.startsWith('ccmixter:') ? `https://ccmixter.org/files/${t.uploader.slice(9)}` : null,
     cover: mediaUrl(t.cover_path),
-    // треки SoundCloud: «soundcloud:<ссылка>», играют через их плеер
-    stream: t.audio_path?.startsWith('soundcloud:') ? t.audio_path : publicUrl(t.audio_path),
-    soundcloud: t.audio_path?.startsWith('soundcloud:') ? t.audio_path.slice(11) : null,
+    stream: publicUrl(t.audio_path),
   };
 }
 
@@ -94,23 +93,8 @@ function hourlyShuffle(list) {
   return list.slice().sort((a, b) => score(a.id) - score(b.id));
 }
 
-// Треки из рекомендаций SoundCloud, которых ещё нет в каталоге: храним их у себя,
-// чтобы они жили в «Любимом» и плейлистах
-function externalTracks() {
-  const likes = load('likes', []);
-  return Object.values(load('ext', {})).map((t) => ({ ...t, liked: likes.includes(t.id) }));
-}
-
-function rememberExternal(track) {
-  if (!track?.external) return;
-  const ext = load('ext', {});
-  ext[track.id] = { ...track, liked: false };
-  save('ext', ext);
-}
-
 function byId(tracks) {
-  // каталожная версия трека важнее сохранённой внешней
-  return new Map([...externalTracks(), ...tracks].map((t) => [t.id, t]));
+  return new Map(tracks.map((t) => [t.id, t]));
 }
 
 function playlistSummary(p, map) {
@@ -134,22 +118,6 @@ function findPlaylist(id) {
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 export const api = {
-  // Ссылки на треки SoundCloud, от которых строятся рекомендации: лайки, потом прослушивания,
-  // потом вся библиотека. known — что уже есть в каталоге (рекомендовать не нужно).
-  async soundcloudSeeds() {
-    const tracks = await tracksView();
-    const map = byId(tracks);
-    const plays = load('plays', {});
-    const sc = (t) => t?.soundcloud;
-    const liked = load('likes', []).map((id) => map.get(id)).filter(sc);
-    const played = tracks.filter((t) => sc(t) && plays[t.id]).sort((a, b) => plays[b.id] - plays[a.id]);
-    const rest = hourlyShuffle(tracks.filter(sc));
-    return {
-      seeds: [...liked, ...played, ...rest].map(sc),
-      known: new Set(tracks.filter(sc).map(sc)),
-    };
-  },
-
   async feed() {
     const tracks = await tracksView();
     const likes = load('likes', []);
@@ -196,8 +164,7 @@ export const api = {
     return load('likes', []).map((id) => map.get(id)).filter(Boolean);
   },
 
-  async like(id, on, track) {
-    if (on) rememberExternal(track);
+  async like(id, on) {
     const likes = load('likes', []).filter((x) => x !== id);
     if (on) likes.unshift(id);
     save('likes', likes);
@@ -236,8 +203,7 @@ export const api = {
     save('playlists', load('playlists', []).filter((p) => p.id !== id));
   },
 
-  async addToPlaylist(id, trackId, track) {
-    rememberExternal(track);
+  async addToPlaylist(id, trackId) {
     const { lists, p } = findPlaylist(id);
     if (p.tracks.includes(trackId)) return { added: false };
     p.tracks.push(trackId);
@@ -358,32 +324,6 @@ export const account = {
       title: title.trim().slice(0, 200),
       artist: artist.trim().slice(0, 200),
       album: AI_ALBUM,
-      source_path: sourcePath,
-      uploader: this.nickname(session.user).slice(0, 60),
-    }));
-    return id;
-  },
-
-  // Трек с SoundCloud: ссылка — JSON-файлом в incoming; обработчик возьмёт название
-  // и обложку через официальный oEmbed SoundCloud и опубликует трек
-  async requestSoundcloud(url) {
-    let u;
-    try { u = new URL(url); } catch { throw new Error('Это не ссылка'); }
-    if (!/(^|\.)soundcloud\.com$/.test(u.hostname) && u.hostname !== 'on.soundcloud.com' && u.hostname !== 'snd.sc') {
-      throw new Error('Нужна ссылка на soundcloud.com');
-    }
-    if (u.pathname.includes('/sets/')) throw new Error('Это плейлист — нужна ссылка на один трек');
-    const { data } = await sb.auth.getSession();
-    const session = data.session;
-    if (!session) throw new Error('Войдите в аккаунт');
-    const id = newId();
-    const sourcePath = `${session.user.id}/${id}.sc`;
-    await putIncoming(session, sourcePath, new Blob([JSON.stringify({ url: u.href })]), 'audio/x-youmusic-request');
-    check(await sb.from('tracks').insert({
-      id,
-      title: 'Трек с SoundCloud',
-      artist: 'SoundCloud',
-      album: 'SoundCloud',
       source_path: sourcePath,
       uploader: this.nickname(session.user).slice(0, 60),
     }));
