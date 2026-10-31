@@ -70,8 +70,9 @@ function view(t, likes) {
     liked: likes.includes(t.id),
     hasLyrics: !!t.has_lyrics,
     uploader: t.uploader || null,
-    // автозагрузка из ccMixter: uploader = «ccmixter:<автор>/<номер>»
-    source: t.uploader?.startsWith('ccmixter:') ? `https://ccmixter.org/files/${t.uploader.slice(9)}` : null,
+    // автозагрузка из Internet Archive: uploader = «archive:<релиз>/<файл>»
+    source: t.uploader?.startsWith('archive:')
+      ? `https://archive.org/details/${encodeURIComponent(t.uploader.slice(8).split('/')[0])}` : null,
     cover: mediaUrl(t.cover_path),
     stream: publicUrl(t.audio_path),
   };

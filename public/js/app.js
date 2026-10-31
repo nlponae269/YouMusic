@@ -73,12 +73,12 @@ function renderTrack() {
   els.miniTitle.textContent = t.title;
   els.miniArtist.textContent = t.artist;
   els.lyrics.disabled = !t.hasLyrics;
-  // треки из открытой библиотеки ccMixter: ссылка на оригинал и лицензию (условие CC BY)
+  // треки из Internet Archive: ссылка на оригинал и лицензию (условие лицензий CC)
   const source = $('#source-link');
   source.hidden = !t.source;
   if (t.source) {
     source.href = t.source;
-    source.textContent = `${t.album || 'ccMixter'} ↗`;
+    source.textContent = `${t.album || 'Internet Archive'} ↗`;
   }
   document.title = `${t.artist} — ${t.title} · YouMusic`;
   applyPalette(t.color);
