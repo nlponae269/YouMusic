@@ -31,7 +31,7 @@ jobs:
       - name: Администраторы (по почте владельца)
         run: python3 processor/admins.py
 
-      - name: Автозагрузка новых треков (ccMixter)
+      - name: Автозагрузка новых треков (Internet Archive)
         run: python3 processor/autoload.py
 
       - name: Есть ли что делать
