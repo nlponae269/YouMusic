@@ -21,6 +21,8 @@ UA = {"User-Agent": "YouMusic (https://github.com/nlponae269/YouMusic)"}
 MAX_BYTES = 45 * 1024 * 1024
 # откуда разрешено скачивать: только файловые серверы каталога
 AUDIO_HOSTS = re.compile(r"(^|\.)storage\.jamendo\.com$")
+COVER_HOSTS = re.compile(r"^usercontent\.jamendo\.com$")
+MAX_COVER = 5 * 1024 * 1024
 EXT = {"audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/ogg": "ogg", "audio/flac": "flac", "audio/wav": "wav",
        "audio/x-wav": "wav", "audio/mp4": "m4a"}
 
@@ -55,9 +57,33 @@ def fetch(track):
     source = re.sub(r"\.imp$", f".{EXT.get(kind, 'mp3')}", track["source_path"])
     call("POST", f"/storage/v1/object/incoming/{urllib.parse.quote(source)}", audio,
          headers={"Content-Type": kind, "x-upsert": "true"})
+    changes = {"source_path": source}
+    cover = fetch_cover(req.get("cover"), re.sub(r"\.imp$", ".cover.jpg", track["source_path"]))
+    if cover:
+        changes["cover_source"] = cover
     # обычная загрузка в очереди: дальше её подхватит модерация
-    call("PATCH", f"/rest/v1/tracks?id=eq.{track['id']}", {"source_path": source})
+    call("PATCH", f"/rest/v1/tracks?id=eq.{track['id']}", changes)
     print(f"Каталог: скачан «{track['artist']} — {track['title']}», отправлен на модерацию")
+
+
+def fetch_cover(url, dest):
+    """Обложка альбома — необязательна: если не скачалась, обработчик нарисует свою."""
+    parts = urllib.parse.urlsplit(url or "")
+    if parts.scheme != "https" or not COVER_HOSTS.search(parts.hostname or ""):
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as res:
+            kind = res.headers.get_content_type()
+            image = res.read(MAX_COVER + 1)
+        if kind not in ("image/jpeg", "image/png", "image/webp") or len(image) > MAX_COVER:
+            return None
+        dest = re.sub(r"\.jpg$", "." + kind.split("/")[1].replace("jpeg", "jpg"), dest)
+        call("POST", f"/storage/v1/object/incoming/{urllib.parse.quote(dest)}", image,
+             headers={"Content-Type": kind, "x-upsert": "true"})
+        return dest
+    except Exception as err:  # noqa: BLE001
+        print(f"Каталог: обложка не скачалась: {err}", file=sys.stderr)
+        return None
 
 
 def migrate():

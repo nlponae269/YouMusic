@@ -31,20 +31,57 @@ function toItem(r) {
     landing: r.foreign_landing_url,
     licence: licenceName(r),
     source: 'Jamendo',
+    cover: cover(r),
   };
 }
 
-export async function searchOpen(q) {
+// Обложка альбома с сервера Jamendo: номер альбома есть в ссылке на его страницу
+function cover(r) {
+  const m = /\/album\/(\d+)/.exec(r.audio_set?.foreign_landing_url || '');
+  return m ? `https://usercontent.jamendo.com/?type=album&id=${m[1]}&width=300` : null;
+}
+
+const PAGE = 20;
+
+// Каталог на новых запросах думает до полуминуты и иногда отвечает 500/504 — тогда пробуем ещё раз
+async function request(url, tries = 2) {
+  for (let i = 1; ; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45_000);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (res.status < 500 || i >= tries) return res;
+    } catch (err) {
+      if (i >= tries) throw new Error('Каталог для загрузки не отвечает — попробуй ещё раз');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// Возвращает { items, more }: more — есть ли следующая страница
+export async function searchOpen(q, page = 1) {
   const query = q.trim();
-  if (query.length < 2) return [];
-  if (cache.has(query)) return cache.get(query);
-  const params = new URLSearchParams({ q: query, license_type: 'modification', source: 'jamendo', page_size: '20' });
-  const res = await fetch(`${API}?${params}`);
+  if (query.length < 2) return { items: [], more: false };
+  const key = `${query}#${page}`;
+  if (cache.has(key)) return cache.get(key);
+  const params = new URLSearchParams({
+    q: query, license_type: 'modification', source: 'jamendo', page_size: String(PAGE), page: String(page),
+  });
+  const res = await request(`${API}?${params}`);
   if (res.status === 429) throw new Error('Слишком много поисков подряд — подожди минуту');
   if (!res.ok) throw new Error('Каталог для загрузки сейчас недоступен');
-  const items = (await res.json()).results
-    .filter((r) => LICENSES.has(r.license) && r.url && r.foreign_landing_url && (!r.duration || r.duration <= 600_000))
+  const data = await res.json();
+  const items = data.results
+    .filter((r) => LICENSES.has(r.license) && r.url && r.foreign_landing_url && !r.mature
+      && (!r.duration || r.duration <= 600_000))
     .map(toItem);
-  cache.set(query, items);
-  return items;
+  const result = { items, more: page < (data.page_count || 0) };
+  cache.set(key, result);
+  return result;
 }
+
+// Быстрые запросы для пустого поиска
+// [подпись, запрос]: каталог в основном англоязычный, поэтому запросы — как там подписаны треки
+export const GENRES = [['Рэп', 'рэп'], ['Хип-хоп', 'хип хоп'], ['Rap', 'rap'], ['Trap', 'trap'], ['Lo-fi', 'lofi'],
+  ['Поп', 'pop'], ['Рок', 'rock'], ['Электроника', 'electronic'], ['Chill', 'chill']];

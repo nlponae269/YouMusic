@@ -1,8 +1,8 @@
-import { api, account, configured } from './api.js';
+import { api, account, configured, splitUploader } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
 import { viewCreate, mountCreate } from './create.js';
 import { player } from './player.js';
-import { searchOpen } from './discover.js';
+import { searchOpen, GENRES } from './discover.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast, store } from './util.js';
 
 const els = {
@@ -856,10 +856,26 @@ async function viewSearch() {
 
 async function searchResults(q) {
   const tracks = await api.search(q);
-  const open = configured && q.trim().length >= 2 ? '<section id="open-results"></section>' : '';
-  if (!tracks.length) return emptyState('search', 'На сайте такого нет', `По запросу «${esc(q)}» треков нет`) + open;
+  const canOpen = configured && q.trim().length >= 2;
+  const open = canOpen ? '<section id="open-results"></section>' : '';
+  if (!q.trim() && configured) {
+    // пустой поиск: жанры для быстрого поиска в каталоге, потом всё, что есть на сайте
+    return `
+      <section class="panel discover">
+        <h2 class="section__title">Найди и загрузи</h2>
+        <p class="section__hint">Тысячи свободных треков: выбери жанр или набери название. Всё, что загрузишь, проверит нейросеть.</p>
+        <div class="chips">${GENRES.map(([label, query]) => `<a class="chip" href="#/search?q=${encodeURIComponent(query)}">${esc(label)}</a>`).join('')}</div>
+      </section>
+      ${tracks.length ? `<div class="section__head" style="margin-top:20px"><h2 class="section__title">Все треки на сайте</h2>
+        <span class="section__hint">${tracks.length}</span></div>${trackRows('search:', tracks)}` : ''}`;
+  }
+  if (!tracks.length) {
+    return canOpen
+      ? `<p class="section__hint" style="margin-top:16px">На сайте по запросу «${esc(q)}» ничего нет — поищем в каталоге ↓</p>${open}`
+      : emptyState('search', 'Ничего не нашлось', `По запросу «${esc(q)}» треков нет`);
+  }
   return `
-    <div class="section__head" style="margin-top:20px"><h2 class="section__title">${q ? 'Найдено' : 'Все треки'}</h2>
+    <div class="section__head" style="margin-top:20px"><h2 class="section__title">${q ? 'На сайте' : 'Все треки'}</h2>
     <span class="section__hint">${tracks.length}</span></div>
     ${trackRows(`search:${q}`, tracks)}${open}`;
 }
@@ -867,58 +883,126 @@ async function searchResults(q) {
 /* ---------- Загрузка из открытого каталога: поиск → «Загрузить» → модерация ---------- */
 
 let openItems = [];
+let openPage = 1;
 let openTimer;
 const preview = new Audio();
 preview.preload = 'none';
+
+// Что из каталога уже есть: опубликовано на сайте (ссылка → трек) или стоит в моей очереди
+async function knownSources() {
+  const onSite = new Map((await api.search('')).filter((t) => t.source).map((t) => [t.source, t]));
+  const queued = new Set();
+  if (await account.user().catch(() => null)) {
+    for (const t of await account.myTracks().catch(() => [])) {
+      const { source } = splitUploader(t.uploader);
+      if (source && (t.status === 'pending' || t.status === 'processing')) queued.add(source);
+    }
+  }
+  return { onSite, queued };
+}
+
+function openRow(t, i, known) {
+  const site = known.onSite.get(t.landing);
+  const action = site
+    ? `<button class="btn btn--ghost btn--sm" data-open-act="play">${icon('play')}На сайте</button>`
+    : known.queued.has(t.landing)
+      ? `<button class="btn btn--ghost btn--sm" disabled>${icon('check')}В очереди</button>`
+      : `<button class="btn btn--primary btn--sm" data-open-act="import">${icon('download')}Загрузить</button>`;
+  return `
+    <div class="row row--open" data-open="${i}">
+      <button class="row__art row__art--btn" data-open-act="preview" aria-label="Послушать отрывок" style="--c:#5b3fa8">
+        ${t.cover ? `<img src="${esc(t.cover)}" alt="" loading="lazy">` : ''}<span class="row__art-icon">${icon('play')}</span>
+      </button>
+      <span class="row__meta">
+        <span class="row__title">${esc(t.title)}</span>
+        <span class="row__artist">${esc(t.artist)}</span>
+      </span>
+      <span class="row__time">${t.duration ? fmtTime(t.duration) : ''}</span>
+      ${action}
+    </div>`;
+}
 
 function loadOpen(q) {
   clearTimeout(openTimer);
   preview.pause();
   const slot = $('#open-results');
   if (!slot) return;
-  slot.innerHTML = '<div class="skeleton" style="height:120px;margin-top:20px"></div>';
+  slot.innerHTML = `
+    <div class="section__head" style="margin-top:28px"><h2 class="section__title">Можно загрузить</h2></div>
+    <p class="section__hint">Ищу в каталоге свободной музыки… первый поиск по новому слову бывает долгим, до полминуты.</p>
+    <div class="skeleton" style="height:120px;margin-top:10px"></div>`;
   // небольшая пауза: пока человек печатает, каталог не дёргаем (у него лимит запросов)
   openTimer = setTimeout(async () => {
-    let items;
+    let result;
+    let known;
     try {
-      items = await searchOpen(q);
+      [result, known] = await Promise.all([searchOpen(q), knownSources()]);
     } catch (err) {
       if (route.q === q && slot.isConnected) slot.innerHTML = `<p class="section__hint" style="margin-top:20px">${esc(err.message)}</p>`;
       return;
     }
     if (route.name !== 'search' || route.q !== q || !slot.isConnected) return;
-    openItems = items;
+    openItems = result.items;
+    openPage = 1;
     slot.innerHTML = `
-      <div class="section__head" style="margin-top:28px"><h2 class="section__title">Можно загрузить</h2>
-        <span class="section__hint">свободные треки Jamendo · проверка нейросетью перед публикацией</span></div>
-      ${items.length ? `<div class="list">${items.map((t, i) => `
-        <div class="row row--open" data-open="${i}">
-          <button class="row__art row__art--btn" data-open-act="preview" aria-label="Послушать" style="--c:#5b3fa8">${icon('play')}</button>
-          <span class="row__meta">
-            <span class="row__title">${esc(t.title)}</span>
-            <span class="row__artist">${esc(t.artist)} · ${esc(t.licence)}</span>
-          </span>
-          <span class="row__time">${t.duration ? fmtTime(t.duration) : ''}</span>
-          <button class="btn btn--primary btn--sm" data-open-act="import">${icon('download')}Загрузить</button>
-        </div>`).join('')}</div>`
-        : '<p class="section__hint">В открытом каталоге тоже ничего не нашлось. Попробуй по-английски или другое название.</p>'}`;
+      <div class="section__head" style="margin-top:28px"><h2 class="section__title">Можно загрузить</h2></div>
+      <p class="section__hint" style="margin:-6px 0 8px">Свободные треки Jamendo. ▶ — послушать отрывок, «Загрузить» — трек проверит нейросеть и выложит на сайт.</p>
+      ${result.items.length ? `<div class="list" id="open-list">${result.items.map((t, i) => openRow(t, i, known)).join('')}</div>
+        ${result.more ? '<button class="btn btn--ghost open-more" data-open-more>Показать ещё</button>' : ''}`
+        : '<p class="section__hint">В каталоге тоже ничего не нашлось. Попробуй по-английски или другое название.</p>'}`;
   }, 600);
 }
 
+async function loadMoreOpen(btn) {
+  btn.disabled = true;
+  try {
+    const [result, known] = await Promise.all([searchOpen(route.q, openPage + 1), knownSources()]);
+    openPage += 1;
+    const start = openItems.length;
+    openItems = openItems.concat(result.items);
+    $('#open-list').insertAdjacentHTML('beforeend', result.items.map((t, i) => openRow(t, start + i, known)).join(''));
+    if (result.more) btn.disabled = false;
+    else btn.remove();
+  } catch (err) {
+    btn.disabled = false;
+    toast(err.message);
+  }
+}
+
+function resetPreviewIcons() {
+  document.querySelectorAll('.row--open').forEach((r) => r.classList.remove('is-preview'));
+  document.querySelectorAll('.row--open .row__art-icon').forEach((b) => { b.innerHTML = icon('play'); });
+}
+
 els.view.addEventListener('click', async (e) => {
+  const more = e.target.closest('[data-open-more]');
+  if (more) return loadMoreOpen(more);
   const btn = e.target.closest('[data-open-act]');
   if (!btn) return;
   const row = btn.closest('[data-open]');
   const item = openItems[Number(row.dataset.open)];
   if (!item) return;
-  if (btn.dataset.openAct === 'preview') {
+  const act = btn.dataset.openAct;
+  if (act === 'preview') {
     const same = preview.src === item.url;
-    document.querySelectorAll('.row--open .row__art--btn').forEach((b) => { b.innerHTML = icon('play'); });
+    resetPreviewIcons();
     if (same && !preview.paused) return preview.pause();
     if (!same) preview.src = item.url;
     player.pause();
     preview.play().catch(() => toast('Не удалось включить отрывок'));
-    btn.innerHTML = icon('pause');
+    row.classList.add('is-preview');
+    btn.querySelector('.row__art-icon').innerHTML = icon('pause');
+    return;
+  }
+  if (act === 'play') {
+    const { onSite } = await knownSources();
+    const track = onSite.get(item.landing);
+    if (track) {
+      preview.pause();
+      resetPreviewIcons();
+      player.source = null;
+      player.setQueue([track]);
+    }
     return;
   }
   if (!(await account.user().catch(() => null))) {
@@ -929,6 +1013,7 @@ els.view.addEventListener('click', async (e) => {
   btn.disabled = true;
   try {
     await account.requestImport(item);
+    btn.className = 'btn btn--ghost btn--sm';
     btn.innerHTML = `${icon('check')}В очереди`;
     toast('Загружается. После проверки нейросетью трек появится на сайте');
   } catch (err) {
@@ -936,9 +1021,8 @@ els.view.addEventListener('click', async (e) => {
     toast(err.message);
   }
 });
-preview.addEventListener('ended', () => {
-  document.querySelectorAll('.row--open .row__art--btn').forEach((b) => { b.innerHTML = icon('play'); });
-});
+preview.addEventListener('ended', resetPreviewIcons);
+preview.addEventListener('pause', () => { if (preview.paused) resetPreviewIcons(); });
 player.addEventListener('state', () => { if (player.playing) preview.pause(); });
 
 const VIEWS = {

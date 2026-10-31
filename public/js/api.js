@@ -351,7 +351,7 @@ export const account = {
     if (!session) throw new Error('Войдите в аккаунт');
     const id = newId();
     const sourcePath = `${session.user.id}/${id}.imp`;
-    await putIncoming(session, sourcePath, new Blob([JSON.stringify({ url: item.url })]), 'audio/x-youmusic-request');
+    await putIncoming(session, sourcePath, new Blob([JSON.stringify({ url: item.url, cover: item.cover })]), 'audio/x-youmusic-request');
     check(await sb.from('tracks').insert({
       id,
       title: item.title.slice(0, 200),

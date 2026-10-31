@@ -541,3 +541,12 @@ img { display: block; }
 .row__art--btn svg { width: 20px; height: 20px; }
 .row--open .btn svg { width: 16px; height: 16px; }
 @media (max-width: 600px) { .row--open .btn { padding: 0 10px; font-size: 13px; } }
+.row__art--btn { position: relative; padding: 0; overflow: hidden; }
+.row__art--btn img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.row__art-icon { position: relative; display: grid; place-items: center; width: 100%; height: 100%; background: rgba(0, 0, 0, .28); opacity: .9; transition: background .15s; }
+.row__art--btn:hover .row__art-icon, .row--open.is-preview .row__art-icon { background: rgba(0, 0, 0, .5); }
+.row--open.is-preview { background: rgba(255, 79, 135, .08); }
+.row--open .btn:disabled { opacity: .6; cursor: default; }
+.open-more { display: flex; margin: 14px auto 0; }
+.discover { margin-top: 16px; display: grid; gap: 10px; }
+.discover .chip { text-decoration: none; }
