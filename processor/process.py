@@ -529,8 +529,8 @@ def main():
     db("PATCH", "tracks?status=eq.processing&processing_started=lt."
        + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3 * 3600)), {"status": "pending"})
 
-    # заявки на генерацию (*.gen) и ссылки SoundCloud (*.sc) обрабатываются отдельно
-    queue = db("GET", f"tracks?status=eq.pending&source_path=not.like.*.gen&source_path=not.like.*.sc"
+    # заявки на генерацию (*.gen) и на скачивание из каталога (*.imp) обрабатываются отдельно
+    queue = db("GET", f"tracks?status=eq.pending&source_path=not.like.*.gen&source_path=not.like.*.sc&source_path=not.like.*.imp"
                       f"&order=created_at.asc&limit={MAX_TRACKS}") or []
     print(f"В очереди: {len(queue)}", flush=True)
     done = failed = 0

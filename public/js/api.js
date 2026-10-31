@@ -58,6 +58,20 @@ export function refreshCatalog() {
   catalogPromise = null;
 }
 
+// Загрузчик в базе: «ник» или «ник\nссылка на оригинал» (для треков из открытых каталогов).
+// Ссылку показываем, только если она ведёт на известный каталог.
+const SOURCE_HOSTS = /(^|\.)(jamendo\.com|archive\.org)$/;
+
+export function splitUploader(value) {
+  const [nick, link] = String(value || '').split('\n');
+  let source = null;
+  try {
+    const u = new URL(link);
+    if (u.protocol === 'https:' && SOURCE_HOSTS.test(u.hostname)) source = u.href;
+  } catch { /* ссылки нет */ }
+  return { nick: nick || null, source };
+}
+
 function view(t, likes) {
   return {
     id: t.id,
@@ -69,10 +83,8 @@ function view(t, likes) {
     peaks: t.peaks || null,
     liked: likes.includes(t.id),
     hasLyrics: !!t.has_lyrics,
-    uploader: t.uploader || null,
-    // автозагрузка из Internet Archive: uploader = «archive:<релиз>/<файл>»
-    source: t.uploader?.startsWith('archive:')
-      ? `https://archive.org/details/${encodeURIComponent(t.uploader.slice(8).split('/')[0])}` : null,
+    uploader: splitUploader(t.uploader).nick,
+    source: splitUploader(t.uploader).source,
     cover: mediaUrl(t.cover_path),
     stream: publicUrl(t.audio_path),
   };
@@ -327,6 +339,26 @@ export const account = {
       album: AI_ALBUM,
       source_path: sourcePath,
       uploader: this.nickname(session.user).slice(0, 60),
+    }));
+    return id;
+  },
+
+  // Трек из открытого каталога (поиск → «Загрузить»): ссылка на файл — JSON-заявкой в incoming,
+  // обработчик скачает его и отправит на ту же модерацию, что и обычные загрузки
+  async requestImport(item) {
+    const { data } = await sb.auth.getSession();
+    const session = data.session;
+    if (!session) throw new Error('Войдите в аккаунт');
+    const id = newId();
+    const sourcePath = `${session.user.id}/${id}.imp`;
+    await putIncoming(session, sourcePath, new Blob([JSON.stringify({ url: item.url })]), 'audio/x-youmusic-request');
+    check(await sb.from('tracks').insert({
+      id,
+      title: item.title.slice(0, 200),
+      artist: item.artist.slice(0, 200),
+      album: `${item.source} · ${item.licence}`.slice(0, 200),
+      source_path: sourcePath,
+      uploader: `${this.nickname(session.user).slice(0, 60)}\n${item.landing}`.slice(0, 200),
     }));
     return id;
   },

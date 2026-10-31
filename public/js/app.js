@@ -2,6 +2,7 @@ import { api, account, configured } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
 import { viewCreate, mountCreate } from './create.js';
 import { player } from './player.js';
+import { searchOpen } from './discover.js';
 import { $, esc, icon, fmtTime, plural, paletteFrom, fakePeaks, resample, toast, store } from './util.js';
 
 const els = {
@@ -837,6 +838,7 @@ els.view.addEventListener('input', (e) => {
       const html = await searchResults(value);
       if (route.name === 'search' && route.q === value) $('#search-results').innerHTML = html;
       renderRows();
+      loadOpen(value);
     } catch (err) {
       toast(err.message);
     }
@@ -854,12 +856,90 @@ async function viewSearch() {
 
 async function searchResults(q) {
   const tracks = await api.search(q);
-  if (!tracks.length) return emptyState('search', 'Ничего не нашлось', `По запросу «${esc(q)}» треков нет`);
+  const open = configured && q.trim().length >= 2 ? '<section id="open-results"></section>' : '';
+  if (!tracks.length) return emptyState('search', 'На сайте такого нет', `По запросу «${esc(q)}» треков нет`) + open;
   return `
     <div class="section__head" style="margin-top:20px"><h2 class="section__title">${q ? 'Найдено' : 'Все треки'}</h2>
     <span class="section__hint">${tracks.length}</span></div>
-    ${trackRows(`search:${q}`, tracks)}`;
+    ${trackRows(`search:${q}`, tracks)}${open}`;
 }
+
+/* ---------- Загрузка из открытого каталога: поиск → «Загрузить» → модерация ---------- */
+
+let openItems = [];
+let openTimer;
+const preview = new Audio();
+preview.preload = 'none';
+
+function loadOpen(q) {
+  clearTimeout(openTimer);
+  preview.pause();
+  const slot = $('#open-results');
+  if (!slot) return;
+  slot.innerHTML = '<div class="skeleton" style="height:120px;margin-top:20px"></div>';
+  // небольшая пауза: пока человек печатает, каталог не дёргаем (у него лимит запросов)
+  openTimer = setTimeout(async () => {
+    let items;
+    try {
+      items = await searchOpen(q);
+    } catch (err) {
+      if (route.q === q && slot.isConnected) slot.innerHTML = `<p class="section__hint" style="margin-top:20px">${esc(err.message)}</p>`;
+      return;
+    }
+    if (route.name !== 'search' || route.q !== q || !slot.isConnected) return;
+    openItems = items;
+    slot.innerHTML = `
+      <div class="section__head" style="margin-top:28px"><h2 class="section__title">Можно загрузить</h2>
+        <span class="section__hint">свободные треки Jamendo · проверка нейросетью перед публикацией</span></div>
+      ${items.length ? `<div class="list">${items.map((t, i) => `
+        <div class="row row--open" data-open="${i}">
+          <button class="row__art row__art--btn" data-open-act="preview" aria-label="Послушать" style="--c:#5b3fa8">${icon('play')}</button>
+          <span class="row__meta">
+            <span class="row__title">${esc(t.title)}</span>
+            <span class="row__artist">${esc(t.artist)} · ${esc(t.licence)}</span>
+          </span>
+          <span class="row__time">${t.duration ? fmtTime(t.duration) : ''}</span>
+          <button class="btn btn--primary btn--sm" data-open-act="import">${icon('download')}Загрузить</button>
+        </div>`).join('')}</div>`
+        : '<p class="section__hint">В открытом каталоге тоже ничего не нашлось. Попробуй по-английски или другое название.</p>'}`;
+  }, 600);
+}
+
+els.view.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-open-act]');
+  if (!btn) return;
+  const row = btn.closest('[data-open]');
+  const item = openItems[Number(row.dataset.open)];
+  if (!item) return;
+  if (btn.dataset.openAct === 'preview') {
+    const same = preview.src === item.url;
+    document.querySelectorAll('.row--open .row__art--btn').forEach((b) => { b.innerHTML = icon('play'); });
+    if (same && !preview.paused) return preview.pause();
+    if (!same) preview.src = item.url;
+    player.pause();
+    preview.play().catch(() => toast('Не удалось включить отрывок'));
+    btn.innerHTML = icon('pause');
+    return;
+  }
+  if (!(await account.user().catch(() => null))) {
+    toast('Войди в аккаунт, чтобы загружать треки');
+    location.hash = '#/account';
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await account.requestImport(item);
+    btn.innerHTML = `${icon('check')}В очереди`;
+    toast('Загружается. После проверки нейросетью трек появится на сайте');
+  } catch (err) {
+    btn.disabled = false;
+    toast(err.message);
+  }
+});
+preview.addEventListener('ended', () => {
+  document.querySelectorAll('.row--open .row__art--btn').forEach((b) => { b.innerHTML = icon('play'); });
+});
+player.addEventListener('state', () => { if (player.playing) preview.pause(); });
 
 const VIEWS = {
   home: viewHome,
@@ -935,6 +1015,7 @@ async function render() {
     if (route.name === 'account') mountAccount(els.view, render);
     if (route.name === 'create') mountCreate(els.view);
     if (route.name === 'search' && !route.q) $('#search-input')?.focus();
+    if (route.name === 'search' && route.q) loadOpen(route.q);
   } catch (err) {
     if (id !== renderId) return;
     els.view.innerHTML = emptyState('close', 'Что-то пошло не так', esc(err.message),

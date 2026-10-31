@@ -92,7 +92,9 @@ function trackList(tracks, admin = false) {
   if (!tracks.length) return '<p class="section__hint">Пока ничего нет</p>';
   return `<div class="list">${tracks.map((t) => {
     const gen = (t.source_path || '').endsWith('.gen');
-    const [label, cls] = gen && t.status === 'pending' ? ['В очереди на генерацию', '']
+    const imp = (t.source_path || '').endsWith('.imp');
+    const [label, cls] = imp && t.status === 'pending' ? ['Скачивается из каталога…', '']
+      : gen && t.status === 'pending' ? ['В очереди на генерацию', '']
       : gen && t.status === 'processing' ? ['Нейросеть сочиняет песню…', '']
         : STATUS[t.status] || [t.status, ''];
     const extra = t.status === 'ready' && t.censored ? ` · вырезано фрагментов: ${t.censored}`
@@ -102,7 +104,7 @@ function trackList(tracks, admin = false) {
       <span class="row__art" style="--c:${esc(t.color || '#333')}">${t.cover ? `<img src="${t.cover}" alt="" loading="lazy">` : ''}</span>
       <span class="row__meta">
         <span class="row__title">${esc(t.title)}</span>
-        <span class="row__artist">${esc(t.artist)}${admin && t.uploader ? ` · загрузил ${esc(t.uploader)}` : ''}</span>
+        <span class="row__artist">${esc(t.artist)}${admin && t.uploader ? ` · загрузил ${esc(t.uploader.split('\n')[0])}` : ''}</span>
         <span class="status ${cls}">${label}${extra}</span>
       </span>
       <span></span>
