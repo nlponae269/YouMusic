@@ -68,13 +68,24 @@ def migrate():
              {"uploader": f"Internet Archive\nhttps://archive.org/details/{urllib.parse.quote(ident)}"})
 
 
+def remove_autoloaded():
+    """Старая автозагрузка из Internet Archive отключена; по просьбе владельца оставлен только один её трек."""
+    keep = "OnorezdiLP016"
+    rows = call("GET", "/rest/v1/tracks?select=id,title&uploader=like.*archive.org/details/*") or []
+    for t in rows:
+        if keep not in call("GET", f"/rest/v1/tracks?select=uploader&id=eq.{t['id']}")[0]["uploader"]:
+            call("DELETE", f"/rest/v1/tracks?id=eq.{t['id']}")
+            print(f"Удалён автотрек «{t['title']}»")
+
+
 def main():
     if not URL or not KEY:
         return
-    try:
-        migrate()
-    except Exception as err:  # noqa: BLE001
-        print(f"::warning::migrate: {err}", file=sys.stderr)
+    for step in (migrate, remove_autoloaded):
+        try:
+            step()
+        except Exception as err:  # noqa: BLE001
+            print(f"::warning::{step.__name__}: {err}", file=sys.stderr)
     rows = call("GET", "/rest/v1/tracks?select=id,title,artist,source_path"
                        "&status=eq.pending&source_path=like.*.imp&limit=20") or []
     for t in rows:
