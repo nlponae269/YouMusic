@@ -1,4 +1,4 @@
-import { api, account, configured, splitUploader } from './api.js';
+import { api, account, configured, splitUploader, authRedirect } from './api.js';
 import { viewAccount, mountAccount } from './account.js';
 import { viewCreate, mountCreate } from './create.js';
 import { player } from './player.js';
@@ -112,6 +112,8 @@ async function renderAuth() {
   }
 }
 account.onChange(renderAuth);
+// пришли по ссылке «сбросить пароль» из письма — сразу на форму нового пароля
+account.onRecovery(() => { location.hash = '#/account?mode=newpass'; });
 
 function renderState() {
   const playing = player.playing;
@@ -1297,6 +1299,13 @@ renderMode();
 renderVolume();
 renderState();
 player.restore();
+// адрес с токеном не трогаем, пока Supabase его не прочитал: дождёмся входа и перейдём сами
+if (authRedirect.recovery) {
+  account.user().then((u) => { if (u && !location.hash.includes('mode=newpass')) location.hash = '#/account?mode=newpass'; });
+} else if (authRedirect.error) {
+  history.replaceState(null, '', '#/account');
+  setTimeout(() => toast(/expired|invalid/i.test(authRedirect.error) ? 'Ссылка из письма устарела — запроси новую' : authRedirect.error), 300);
+}
 render();
 renderAuth();
 

@@ -15,7 +15,7 @@ let pendingFiles = [];
 let pollTimer = null;
 
 export async function viewAccount(route = {}) {
-  if (route.mode === 'signup' || route.mode === 'login') {
+  if (['signup', 'login', 'reset', 'newpass'].includes(route.mode)) {
     mode = route.mode;
     route.mode = null;
     history.replaceState(null, '', '#/account');
@@ -26,7 +26,11 @@ export async function viewAccount(route = {}) {
       <span>Владельцу сайта нужно подключить Supabase — см. инструкцию в README репозитория.</span></div>`;
   }
   const user = await account.user();
-  if (!user) return authForm();
+  if (mode === 'newpass') {
+    if (user) return newPasswordForm();
+    mode = 'login'; // ссылка уже использована или устарела
+  }
+  if (!user) return mode === 'reset' ? resetForm() : authForm();
 
   const [mine, admin] = await Promise.all([account.myTracks(), account.isAdmin()]);
   const all = admin ? await account.myTracks(true) : [];
@@ -85,6 +89,29 @@ function authForm() {
         autocomplete="${signup ? 'new-password' : 'current-password'}">
       <button class="btn btn--accent">${signup ? 'Зарегистрироваться' : 'Войти'}</button>
       <button type="button" class="chip" data-acc="switch">${signup ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Регистрация'}</button>
+      ${signup ? '' : '<button type="button" class="link-btn" data-acc="forgot">Забыли пароль?</button>'}
+    </form>`;
+}
+
+function resetForm() {
+  return `
+    <h1 class="page-title">Сброс пароля</h1>
+    <form class="panel auth" id="reset-form">
+      <p class="section__hint">Введи почту, с которой регистрировался. Придёт письмо со ссылкой — по ней задашь новый пароль.</p>
+      <input class="field" name="email" type="email" placeholder="Почта" required autocomplete="email">
+      <button class="btn btn--accent">Прислать ссылку</button>
+      <button type="button" class="chip" data-acc="to-login">Вспомнил пароль — войти</button>
+    </form>`;
+}
+
+function newPasswordForm() {
+  return `
+    <h1 class="page-title">Новый пароль</h1>
+    <form class="panel auth" id="newpass-form">
+      <p class="section__hint">Придумай новый пароль — старый перестанет работать.</p>
+      <input class="field" name="password" type="password" placeholder="Новый пароль (минимум 6 символов)" minlength="6" required autocomplete="new-password">
+      <input class="field" name="again" type="password" placeholder="Ещё раз" minlength="6" required autocomplete="new-password">
+      <button class="btn btn--accent">Сохранить пароль</button>
     </form>`;
 }
 
@@ -142,6 +169,39 @@ export function mountAccount(root, rerender) {
     }
   });
 
+  const resetFormEl = $('#reset-form', root);
+  resetFormEl?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = resetFormEl.querySelector('.btn');
+    btn.disabled = true;
+    try {
+      await account.resetPassword(resetFormEl.email.value.trim());
+      resetFormEl.innerHTML = `<p class="section__hint">Письмо отправлено на <b>${esc(resetFormEl.email.value.trim())}</b>.
+        Открой его и нажми на ссылку. Не видно — загляни в «Спам».</p>
+        <button type="button" class="chip" data-acc="to-login">Назад ко входу</button>`;
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+    }
+  });
+
+  const newPassEl = $('#newpass-form', root);
+  newPassEl?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (newPassEl.password.value !== newPassEl.again.value) return toast('Пароли не совпадают');
+    const btn = newPassEl.querySelector('.btn');
+    btn.disabled = true;
+    try {
+      await account.setPassword(newPassEl.password.value);
+      toast('Пароль изменён — ты в аккаунте');
+      mode = 'login';
+      rerender();
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false;
+    }
+  });
+
   const filesInput = $('#files', root);
   filesInput?.addEventListener('change', () => {
     addFiles([...filesInput.files], root);
@@ -157,6 +217,9 @@ export function mountAccount(root, rerender) {
     const act = btn.dataset.acc;
     if (act === 'switch') {
       mode = mode === 'signup' ? 'login' : 'signup';
+      rerender();
+    } else if (act === 'forgot' || act === 'to-login') {
+      mode = act === 'forgot' ? 'reset' : 'login';
       rerender();
     } else if (act === 'logout') {
       await account.signOut();

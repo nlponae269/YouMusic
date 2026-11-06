@@ -605,3 +605,5 @@ img { display: block; }
   .promo--app { grid-template-columns: auto minmax(0, 1fr); }
   .promo--app .promo__actions { grid-column: 1 / -1; }
 }
+.link-btn { justify-self: center; padding: 6px 10px; color: var(--text-2); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:hover { color: var(--text); }

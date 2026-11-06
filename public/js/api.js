@@ -5,6 +5,14 @@ const URL_BASE = String(window.YOUMUSIC_SUPABASE_URL || '').replace(/\/$/, '');
 const ANON_KEY = window.YOUMUSIC_SUPABASE_KEY || '';
 
 export const configured = !!(URL_BASE && ANON_KEY && window.supabase);
+// Ссылка из письма «сброс пароля» приходит с #...type=recovery — запоминаем это до того,
+// как Supabase заберёт токен из адреса; ошибка ссылки (например, устарела) — тоже в адресе
+const HASH = new URLSearchParams(location.hash.replace(/^#/, ''));
+export const authRedirect = {
+  recovery: HASH.get('type') === 'recovery',
+  error: HASH.get('error_code') || HASH.get('error') ? (HASH.get('error_description') || 'Ссылка недействительна') : null,
+};
+
 export const sb = configured ? window.supabase.createClient(URL_BASE, ANON_KEY) : null;
 
 export const MAX_UPLOAD = 50 * 1024 * 1024;
@@ -238,6 +246,7 @@ const AUTH_ERRORS = {
   'User already registered': 'Такая почта уже зарегистрирована',
   'Email not confirmed': 'Подтвердите почту — ссылка в письме',
   'Password should be at least 6 characters.': 'Пароль — минимум 6 символов',
+  'New password should be different from the old password.': 'Новый пароль должен отличаться от старого',
 };
 
 function authCheck({ data, error }) {
@@ -299,6 +308,24 @@ export const account = {
 
   onChange(fn) {
     if (configured) sb.auth.onAuthStateChange(() => fn());
+  },
+
+  // человек пришёл по ссылке из письма о сбросе пароля
+  onRecovery(fn) {
+    if (configured) sb.auth.onAuthStateChange((event) => { if (event === 'PASSWORD_RECOVERY') fn(); });
+  },
+
+  // письмо со ссылкой для нового пароля; ссылка ведёт обратно на сайт
+  async resetPassword(email) {
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.href.split('#')[0] });
+    if (error) {
+      if (/rate limit|security purposes/i.test(error.message)) throw new Error('Письмо недавно уже отправляли — подожди немного и попробуй снова');
+      throw new Error(AUTH_ERRORS[error.message] || error.message);
+    }
+  },
+
+  async setPassword(password) {
+    authCheck(await sb.auth.updateUser({ password }));
   },
 
   async isAdmin() {
