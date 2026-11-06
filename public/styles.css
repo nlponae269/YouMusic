@@ -433,27 +433,73 @@ img { display: block; }
 .sheet__item .is-done { color: var(--ok); }
 .sheet form { display: flex; gap: 8px; margin-top: 10px; }
 
-.lyrics {
-  position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column;
-  background: radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--tc) 60%, var(--bg)), var(--bg) 75%);
+.lyr {
+  position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tc) 72%, #000) 0%, color-mix(in srgb, var(--tc) 38%, var(--bg)) 100%);
   animation: up .35s cubic-bezier(.2, .9, .3, 1);
 }
-.lyrics__head { display: flex; align-items: center; gap: 12px; padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 8px; }
-.lyrics__head img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; }
-.lyrics__head div { flex: 1; min-width: 0; display: grid; }
-.lyrics__head small { color: var(--text-2); }
-.lyrics__body {
-  flex: 1; overflow-y: auto; width: 100%; max-width: 760px; margin: 0 auto; padding: 24px 24px 45vh; scroll-behavior: smooth;
-  mask-image: linear-gradient(transparent, #000 8%, #000 80%, transparent);
+.lyr__head { display: flex; align-items: center; gap: 8px; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 4px; }
+.lyr__meta { flex: 1; min-width: 0; display: grid; text-align: center; }
+.lyr__meta b, .lyr__meta small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lyr__meta small { color: rgba(255, 255, 255, .6); font-weight: 600; }
+.lyr__body {
+  flex: 1; overflow-y: auto; width: 100%; max-width: 820px; margin: 0 auto; padding: 0 24px; scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 14%, #000 82%, transparent);
 }
-.lyrics__line {
-  display: block; width: 100%; padding: 6px 0; text-align: left; color: rgba(255, 255, 255, .3);
-  font-size: clamp(24px, 5vw, 38px); font-weight: 850; letter-spacing: -.025em; line-height: 1.25; transition: color .3s;
+.lyr__body::-webkit-scrollbar { display: none; }
+.lyr__pad { height: 30vh; }
+.lyr__pad:last-child { height: 60vh; }
+.lyr__line {
+  --d: 4;
+  display: block; width: 100%; padding: 14px 0; text-align: center; color: #fff; cursor: pointer;
+  font-size: clamp(30px, 8vw, 54px); font-weight: 900; letter-spacing: -.035em; line-height: 1.08; overflow-wrap: anywhere;
+  /* чем дальше строка от текущей, тем она бледнее и размытее */
+  opacity: calc(.62 - var(--d) * .13); filter: blur(calc(var(--d) * .9px));
+  transform: scale(.94); transform-origin: center;
+  transition: opacity .45s, filter .45s, transform .45s cubic-bezier(.2, .9, .3, 1.2);
 }
-.lyrics__line.is-past { color: rgba(255, 255, 255, .55); }
-.lyrics__line.is-active { color: #fff; }
-.lyrics--plain .lyrics__line { color: var(--text); font-size: clamp(19px, 4vw, 26px); cursor: default; }
-.lyrics__foot { display: flex; justify-content: center; padding: 8px 16px calc(16px + var(--safe-b)); }
+.lyr__line.is-active { opacity: 1; filter: none; transform: scale(1); }
+.lyr__line.is-past { opacity: .22; filter: blur(1.5px); }
+.lyr__line:hover { opacity: .9; filter: none; }
+.lyr__line--gap { padding: 22px 0; cursor: default; }
+.lyr--plain .lyr__plain { padding: 24px 0 30vh; font-size: clamp(20px, 5vw, 28px); font-weight: 800; line-height: 1.4; text-align: center; }
+.lyr--plain .lyr__plain p { margin: 0; }
+.lyr__err { margin-top: 30vh; text-align: center; color: rgba(255, 255, 255, .7); }
+.lyr__foot { width: 100%; max-width: 820px; margin: 0 auto; padding: 6px 24px calc(14px + var(--safe-b)); display: grid; gap: 10px; }
+.lyr__bar { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .22); cursor: pointer; position: relative; }
+.lyr__bar::before { content: ''; position: absolute; inset: -10px 0; }
+.lyr__bar b { display: block; height: 100%; border-radius: 2px; background: #fff; }
+.lyr__ctrl { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.lyr__time { flex: 1; font-size: 13px; color: rgba(255, 255, 255, .65); font-variant-numeric: tabular-nums; }
+.lyr__time[data-dur] { text-align: right; }
+.lyr__play { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: #fff; color: #111; }
+.lyr__play svg { width: 28px; height: 28px; }
+
+/* точки на проигрыше: загораются по одной */
+.lyr-dots { display: inline-flex; gap: 14px; align-items: center; justify-content: center; }
+.lyr-dots i { width: 20px; height: 20px; border-radius: 50%; background: rgba(255, 255, 255, .28); transition: background .4s, transform .4s; }
+.lyr-dots i.is-on { background: rgba(255, 255, 255, .9); transform: scale(1.12); }
+.lyr__line--gap.is-active .lyr-dots i:not(.is-on) { animation: dot 1.6s ease-in-out infinite; }
+.lyr-dots i:nth-child(2) { animation-delay: .2s !important; }
+.lyr-dots i:nth-child(3) { animation-delay: .4s !important; }
+.lyr-dots i:nth-child(4) { animation-delay: .6s !important; }
+@keyframes dot { 50% { transform: scale(.82); background: rgba(255, 255, 255, .42); } }
+
+/* карточка с текстом на месте обложки */
+.np__art { position: relative; }
+.np__lyr {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; border-radius: var(--r-xl); cursor: pointer;
+  background: color-mix(in srgb, var(--tc) 55%, rgba(20, 20, 26, .92)); box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+  animation: fade .3s;
+}
+.np__lyr[hidden] { display: none; }
+.np.has-lyr .np__art img { visibility: hidden; }
+.np__lyr-expand { position: absolute; top: 10px; right: 10px; color: rgba(255, 255, 255, .8); }
+.np__lyr-text { text-align: center; }
+.np__lyr-text p { margin: 0; font-size: clamp(24px, 6.4vw, 36px); font-weight: 900; letter-spacing: -.03em; line-height: 1.1; color: rgba(255, 255, 255, .38); overflow-wrap: anywhere; }
+.np__lyr-text p.is-now { color: #fff; margin-bottom: 18px; animation: rise .4s cubic-bezier(.2, .9, .3, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } }
+#lyrics-btn.is-on { background: #fff; color: #111; }
 
 .toast {
   position: fixed; z-index: 90; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -160%);

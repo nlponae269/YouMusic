@@ -254,7 +254,6 @@ els.download.addEventListener('click', async () => {
     toast('Не удалось скачать трек');
   }
 });
-els.lyrics.addEventListener('click', () => openLyrics());
 els.queue.addEventListener('click', () => openQueue());
 els.share.addEventListener('click', async () => {
   const t = player.current;
@@ -539,18 +538,57 @@ async function removeFromPlaylist(track) {
   }
 }
 
-/* =============== Текст песни =============== */
+/* =============== Текст песни (как в Яндекс Музыке) =============== */
 
+// Строки LRC: { time, text } или { time, gap: true } — проигрыш, вместо текста точки
 function parseLrc(text) {
   const lines = [];
   for (const raw of text.split(/\r?\n/)) {
     const stamps = [...raw.matchAll(/\[(\d{1,2}):(\d{2}(?:[.:]\d{1,3})?)\]/g)];
     if (!stamps.length) continue;
     const words = raw.replace(/\[[^\]]*\]/g, '').trim();
-    for (const s of stamps) lines.push({ time: Number(s[1]) * 60 + Number(s[2].replace(':', '.')), text: words || '♪' });
+    for (const st of stamps) {
+      const time = Number(st[1]) * 60 + Number(st[2].replace(':', '.'));
+      lines.push(words && words !== '♪' ? { time, text: words } : { time, gap: true });
+    }
   }
-  return lines.sort((a, b) => a.time - b.time);
+  lines.sort((x, y) => x.time - y.time);
+  // вступление до первой строки — тоже проигрыш
+  if (lines.length && lines[0].time > 4 && !lines[0].gap) lines.unshift({ time: 0, gap: true });
+  // два проигрыша подряд не нужны
+  return lines.filter((l, i) => !(l.gap && lines[i - 1]?.gap));
 }
+
+const lyricsCache = new Map();
+function loadLyrics(t) {
+  if (!lyricsCache.has(t.id)) {
+    const p = api.lyrics(t.id).then(({ lyrics }) => ({ lines: parseLrc(lyrics || ''), plain: lyrics || '' }));
+    p.catch(() => lyricsCache.delete(t.id));
+    lyricsCache.set(t.id, p);
+  }
+  return lyricsCache.get(t.id);
+}
+
+function activeLine(lines, time) {
+  let idx = -1;
+  while (idx + 1 < lines.length && lines[idx + 1].time <= time) idx++;
+  return idx;
+}
+
+// Доля проигрыша, которая уже прошла: точки загораются по одной
+function gapProgress(lines, idx, time) {
+  const end = lines[idx + 1]?.time ?? (player.duration || lines[idx].time + 8);
+  return Math.max(0, Math.min(1, (time - lines[idx].time) / Math.max(1, end - lines[idx].time)));
+}
+
+const DOTS = '<span class="lyr-dots" aria-label="Проигрыш"><i></i><i></i><i></i><i></i></span>';
+function paintDots(root, k) {
+  root.querySelectorAll('.lyr-dots i').forEach((d, i) => d.classList.toggle('is-on', k >= (i + 1) / 5));
+}
+
+const lyrTime = () => player.audio.currentTime + 0.2;
+
+/* ---------- Полноэкранный текст ---------- */
 
 let lyricsView = null;
 
@@ -559,62 +597,100 @@ async function openLyrics() {
   if (!t?.hasLyrics) return;
   closeLyrics();
   const el = document.createElement('div');
-  el.className = 'lyrics';
+  el.className = 'lyr';
   el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Текст песни');
   el.innerHTML = `
-    <div class="lyrics__head">
-      <img src="${t.cover || 'icon.svg'}" alt="">
-      <div><b>${esc(t.title)}</b><small>${esc(t.artist)}</small></div>
+    <header class="lyr__head">
       <button class="icon-btn" data-close aria-label="Закрыть">${icon('chevron-down')}</button>
-    </div>
-    <div class="lyrics__body"><div class="skeleton" style="height:200px"></div></div>
-    <div class="lyrics__foot"><button class="btn btn--ghost" data-toggle></button></div>`;
+      <div class="lyr__meta"><b>${esc(t.title)}</b><small>${esc(t.artist)}</small></div>
+      <button class="icon-btn" data-close aria-label="Свернуть">${icon('collapse')}</button>
+    </header>
+    <div class="lyr__body"><div class="skeleton" style="height:200px;margin:30vh 24px 0"></div></div>
+    <footer class="lyr__foot">
+      <div class="lyr__bar"><b></b></div>
+      <div class="lyr__ctrl">
+        <span class="lyr__time" data-cur>0:00</span>
+        <button class="icon-btn" data-prev aria-label="Предыдущий">${icon('prev')}</button>
+        <button class="lyr__play" data-toggle aria-label="Пауза"></button>
+        <button class="icon-btn" data-next aria-label="Следующий">${icon('next')}</button>
+        <span class="lyr__time" data-dur>0:00</span>
+      </div>
+    </footer>`;
   document.body.append(el);
-  const body = el.querySelector('.lyrics__body');
+  const body = el.querySelector('.lyr__body');
   const toggleBtn = el.querySelector('[data-toggle]');
-  const syncToggle = () => {
-    toggleBtn.innerHTML = `${icon(player.playing ? 'pause' : 'play')}${player.playing ? 'Пауза' : 'Слушать'}`;
-  };
+  const syncToggle = () => { toggleBtn.innerHTML = icon(player.playing ? 'pause' : 'play'); };
   syncToggle();
   toggleBtn.addEventListener('click', () => player.toggle());
-  el.querySelector('[data-close]').addEventListener('click', closeLyrics);
+  el.querySelector('[data-prev]').addEventListener('click', () => player.prev());
+  el.querySelector('[data-next]').addEventListener('click', () => player.next());
+  el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeLyrics));
+  el.querySelector('.lyr__bar').addEventListener('click', (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    player.seek((e.clientX - r.left) / r.width);
+  });
 
-  const state = { el, lines: [], nodes: [], active: -1, syncToggle };
+  const state = { el, body, lines: [], nodes: [], active: -2, userScroll: 0, syncToggle, id: t.id };
   lyricsView = state;
+  // человек листает сам — какое-то время не крутим текст за него
+  for (const type of ['wheel', 'touchmove']) body.addEventListener(type, () => { state.userScroll = Date.now(); }, { passive: true });
   try {
-    const { lyrics } = await api.lyrics(t.id);
+    const { lines, plain } = await loadLyrics(t);
     if (lyricsView !== state) return;
-    state.lines = parseLrc(lyrics);
-    if (state.lines.length) {
-      body.innerHTML = state.lines.map((l, i) => `<button class="lyrics__line" data-i="${i}">${esc(l.text)}</button>`).join('');
-      state.nodes = [...body.children];
+    state.lines = lines;
+    if (lines.length) {
+      body.innerHTML = `<div class="lyr__pad"></div>${lines.map((l, i) => (l.gap
+        ? `<div class="lyr__line lyr__line--gap" data-i="${i}">${DOTS}</div>`
+        : `<button class="lyr__line" data-i="${i}">${esc(l.text)}</button>`)).join('')}<div class="lyr__pad"></div>`;
+      state.nodes = [...body.querySelectorAll('.lyr__line')];
       body.addEventListener('click', (e) => {
         const line = e.target.closest('[data-i]');
-        if (line) player.audio.currentTime = state.lines[line.dataset.i].time;
+        if (!line) return;
+        player.audio.currentTime = state.lines[line.dataset.i].time;
+        state.userScroll = 0;
+        if (!player.playing) player.play();
       });
-      syncLyrics();
+      syncLyrics(true);
     } else {
-      el.classList.add('lyrics--plain');
-      body.innerHTML = lyrics.split(/\r?\n/).map((l) => `<p class="lyrics__line">${esc(l) || '&nbsp;'}</p>`).join('');
+      el.classList.add('lyr--plain');
+      body.innerHTML = `<div class="lyr__plain">${plain.split(/\r?\n/).map((l) => `<p>${esc(l) || '&nbsp;'}</p>`).join('')}</div>`;
     }
   } catch (err) {
-    body.textContent = err.message;
+    body.innerHTML = `<p class="lyr__err">${esc(err.message)}</p>`;
   }
+  syncLyricsTime();
 }
 
-function syncLyrics() {
+function syncLyricsTime() {
+  const s = lyricsView;
+  if (!s) return;
+  const d = player.duration;
+  const cur = player.audio.currentTime || 0;
+  s.el.querySelector('.lyr__bar b').style.width = `${d ? (cur / d) * 100 : 0}%`;
+  s.el.querySelector('[data-cur]').textContent = fmtTime(cur);
+  s.el.querySelector('[data-dur]').textContent = fmtTime(d);
+}
+
+function syncLyrics(force = false) {
+  syncLyricsTime();
   const s = lyricsView;
   if (!s?.lines.length) return;
-  const time = player.audio.currentTime + 0.25;
-  let idx = -1;
-  while (idx + 1 < s.lines.length && s.lines[idx + 1].time <= time) idx++;
-  if (idx === s.active) return;
+  const time = lyrTime();
+  const idx = activeLine(s.lines, time);
+  if (idx >= 0 && s.lines[idx].gap) paintDots(s.nodes[idx], gapProgress(s.lines, idx, time));
+  if (idx === s.active && !force) return;
   s.active = idx;
   s.nodes.forEach((n, i) => {
-    n.classList.toggle('is-active', i === idx);
-    n.classList.toggle('is-past', i < idx);
+    const dist = i - idx;
+    n.classList.toggle('is-active', dist === 0);
+    n.classList.toggle('is-past', dist < 0);
+    // следующие строки всё бледнее и размытее, как в Яндекс Музыке
+    n.style.setProperty('--d', String(Math.max(0, Math.min(dist, 4))));
   });
-  s.nodes[Math.max(0, idx)]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  if (Date.now() - s.userScroll < 4000) return;
+  const node = s.nodes[Math.max(0, idx)];
+  if (node) s.body.scrollTo({ top: node.offsetTop - s.body.clientHeight * 0.3, behavior: force ? 'auto' : 'smooth' });
 }
 
 function closeLyrics() {
@@ -622,9 +698,70 @@ function closeLyrics() {
   lyricsView = null;
 }
 
-player.addEventListener('time', syncLyrics);
+/* ---------- Карточка с текстом на месте обложки ---------- */
+
+const card = { el: $('#np-lyr'), text: $('#np-lyr-text'), on: store('lyrCard') !== false, lines: null, id: null, active: -2 };
+
+async function renderCard() {
+  const t = player.current;
+  const want = card.on && t?.hasLyrics;
+  els.lyrics.classList.toggle('is-on', !!want);
+  if (!want) {
+    card.el.hidden = true;
+    els.player.classList.remove('has-lyr');
+    return;
+  }
+  if (card.id !== t.id) {
+    card.id = t.id;
+    card.lines = null;
+    card.active = -2;
+    card.text.innerHTML = '';
+    try {
+      const { lines } = await loadLyrics(t);
+      if (card.id !== t.id) return;
+      card.lines = lines;
+    } catch {
+      card.lines = [];
+    }
+  }
+  // текст без таймкодов в карточку не помещается — его показываем только на весь экран
+  const show = !!card.lines?.length;
+  card.el.hidden = !show;
+  els.player.classList.toggle('has-lyr', show);
+  if (show) syncCard(true);
+}
+
+function syncCard(force = false) {
+  if (card.el.hidden || !card.lines?.length) return;
+  const time = lyrTime();
+  const idx = activeLine(card.lines, time);
+  const line = card.lines[idx];
+  if (line?.gap || idx < 0) {
+    if (card.active !== idx || force) card.text.innerHTML = DOTS;
+    paintDots(card.text, idx < 0 ? 0 : gapProgress(card.lines, idx, time));
+  } else if (card.active !== idx || force) {
+    const next = card.lines[idx + 1];
+    card.text.innerHTML = `<p class="is-now">${esc(line.text)}</p>${next && !next.gap ? `<p>${esc(next.text)}</p>` : ''}`;
+  }
+  card.active = idx;
+}
+
+card.el.addEventListener('click', () => openLyrics());
+els.lyrics.addEventListener('click', () => {
+  const t = player.current;
+  if (!t?.hasLyrics) return;
+  // на телефоне в маленьком плеере обложки не видно — сразу открываем текст на весь экран
+  if (!npOpen) return openLyrics();
+  card.on = !card.on;
+  store('lyrCard', card.on);
+  renderCard();
+  if (card.on && card.lines && !card.lines.length) openLyrics();
+});
+
+player.addEventListener('time', () => { syncLyrics(); syncCard(); });
 player.addEventListener('state', () => lyricsView?.syncToggle());
 player.addEventListener('track', () => {
+  renderCard();
   if (!lyricsView) return;
   if (player.current?.hasLyrics) openLyrics();
   else closeLyrics();
@@ -1067,7 +1204,7 @@ els.npClose.addEventListener('click', closePlayer);
 els.miniPrev.addEventListener('click', () => player.prev());
 els.miniNext.addEventListener('click', () => player.next());
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && npOpen && !document.querySelector('.lyrics, .sheet-backdrop')) closePlayer();
+  if (e.key === 'Escape' && npOpen && !document.querySelector('.lyr, .sheet-backdrop')) closePlayer();
 });
 
 function updateChrome() {
