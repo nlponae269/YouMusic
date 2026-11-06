@@ -238,6 +238,9 @@ els.add.addEventListener('click', () => player.current && openPlaylistPicker(pla
 els.download.addEventListener('click', async () => {
   const t = player.current;
   if (!t) return;
+  const name = `${t.artist} - ${t.title}.${t.stream.split('.').pop()}`.replace(/[\\/:*?"<>|]/g, '_');
+  // в приложении для Android файл качает сам телефон — в папку «Загрузки»
+  if (window.YouMusicApp) return window.YouMusicApp.download(t.stream, name);
   // файл лежит на другом домене — атрибут download там не работает, поэтому качаем через blob
   toast('Скачиваю…');
   try {
@@ -246,7 +249,7 @@ els.download.addEventListener('click', async () => {
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${t.artist} - ${t.title}.${t.stream.split('.').pop()}`.replace(/[\\/:*?"<>|]/g, '_');
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     toast('Готово');
@@ -389,6 +392,12 @@ els.view.addEventListener('click', async (e) => {
     } else {
       playList(key, 0);
     }
+    return;
+  }
+
+  if (e.target.closest('[data-app-hide]')) {
+    store('appBannerHidden', true);
+    e.target.closest('[data-app-banner]').remove();
     return;
   }
 
@@ -772,7 +781,10 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLyric
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
+// в приложении для Android распознаёт речь сам телефон (голосовой ввод Google)
+window.__ymVoice = (text) => { location.hash = `#/search?q=${encodeURIComponent(text)}`; };
 els.voice.addEventListener('click', () => {
+  if (window.YouMusicApp) return window.YouMusicApp.voice();
   if (!Recognition) return toast('Голосовой поиск не поддерживается этим браузером');
   if (recognition) return recognition.stop();
   recognition = new Recognition();
@@ -866,6 +878,19 @@ async function viewHome() {
       </div>
       <span class="btn btn--primary">${icon('wave')}Создать песню</span>
     </a>`;
+  // предложение скачать приложение — только в браузере на Android, пока его не закрыли
+  const appBanner = /Android/i.test(navigator.userAgent) && !window.YouMusicApp && !store('appBannerHidden') ? `
+    <section class="promo promo--app" data-app-banner>
+      <img src="icon.svg" alt="" width="56" height="56">
+      <div>
+        <h2 class="promo__title">YouMusic для Android</h2>
+        <p class="promo__text">Музыка не выключается в фоне, треки скачиваются в «Загрузки», голосовой поиск.</p>
+      </div>
+      <div class="promo__actions">
+        <a class="btn btn--accent" href="YouMusic.apk" download>${icon('download')}Скачать APK</a>
+        <button class="icon-btn" data-app-hide aria-label="Скрыть">${icon('close')}</button>
+      </div>
+    </section>` : '';
   const mins = Math.max(1, Math.round((feed.nextRefresh - Date.now()) / 60000));
   const mixes = [
     mixCard('mix:wave', 'Слушать', 'Моя волна', feed.wave),
@@ -888,7 +913,7 @@ async function viewHome() {
       <h1 class="greet__hi">${greeting()}${user ? `, ${esc(account.nickname(user))}` : ''}</h1>
       <span class="greet__sub">Бесплатно, без рекламы и без мата</span>
     </header>
-    ${banner}
+    ${appBanner}${banner}
     <section>
       <div class="section__head">
         <h2 class="section__title">Подборки для тебя</h2>
@@ -1192,6 +1217,17 @@ function openPlayer() {
   updateChrome();
   buildWave();
 }
+
+// Кнопка «Назад» в приложении для Android: закрываем верхнее, что открыто.
+// true — назад обработали, иначе приложение листает историю или сворачивается.
+window.__ymBack = () => {
+  const sheet = document.querySelector('.sheet-backdrop');
+  if (sheet) { sheet.click(); sheet.remove(); return true; }
+  if (lyricsView) { closeLyrics(); return true; }
+  if (npOpen) { closePlayer(); return true; }
+  if (route.name !== 'home') { location.hash = '#/'; return true; }
+  return false;
+};
 
 function closePlayer() {
   npOpen = false;

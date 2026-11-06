@@ -596,3 +596,12 @@ img { display: block; }
 .open-more { display: flex; margin: 14px auto 0; }
 .discover { margin-top: 16px; display: grid; gap: 10px; }
 .discover .chip { text-decoration: none; }
+
+/* ---------- Баннер приложения для Android ---------- */
+.promo--app { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+.promo--app > img { border-radius: 14px; }
+.promo--app .promo__actions { align-items: center; }
+@media (max-width: 600px) {
+  .promo--app { grid-template-columns: auto minmax(0, 1fr); }
+  .promo--app .promo__actions { grid-column: 1 / -1; }
+}
