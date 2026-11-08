@@ -4,11 +4,18 @@
   const sb = cfg.url && cfg.key && window.supabase ? window.supabase.createClient(cfg.url, cfg.key) : null;
 
   const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const pubUrl = (bucket, path) => path ? sb.storage.from(bucket).getPublicUrl(path).data.publicUrl : '';
   const shuffleArr = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const NOCOVER = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" fill="#222"/><text x="24" y="31" font-size="22" text-anchor="middle" fill="#666">♪</text></svg>');
+  const ic = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
+  const hue = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const grad = s => { const h = hue(s); return `linear-gradient(135deg,hsl(${h} 70% 56%),hsl(${(h + 50) % 360} 70% 32%))`; };
+  // обложка: картинка или градиент с буквой
+  const cover = (t, key) => t && t.cover_path
+    ? `<img loading="lazy" alt="" src="${esc(pubUrl('covers', t.cover_path))}">`
+    : `<div class="ph" style="background:${grad(key ?? t?.title ?? '?')}">${esc((t?.title || key || '♪').trim().charAt(0))}</div>`;
 
   let toastT;
   function toast(msg) {
@@ -17,9 +24,8 @@
   }
 
   // ---------- состояние ----------
-  const S = { user: null, profile: null, likes: new Set(), playlists: [], queue: [], qi: -1, shuffle: false, repeat: 0, list: [] };
-  const audio = new Audio(); audio.preload = 'metadata';
-  audio.volume = 0.8;
+  const S = { user: null, profile: null, likes: new Set(), playlists: [], queue: [], qi: -1, shuffle: false, repeat: 0 };
+  const audio = new Audio(); audio.preload = 'metadata'; audio.volume = 0.8;
 
   // ---------- данные ----------
   async function getTracks({ q, owner, genre, order = 'created_at', limit = 100 } = {}) {
@@ -32,7 +38,7 @@
     return data || [];
   }
   async function loadUserData() {
-    S.likes = new Set(); S.playlists = [];
+    S.likes = new Set(); S.playlists = []; S.profile = null;
     if (!S.user) return;
     const [l, p, pr] = await Promise.all([
       sb.from('sup_likes').select('track_id').eq('user_id', S.user.id),
@@ -45,38 +51,50 @@
   }
   async function toggleLike(id) {
     if (!S.user) return openAuth();
-    if (S.likes.has(id)) { S.likes.delete(id); await sb.from('sup_likes').delete().eq('user_id', S.user.id).eq('track_id', id); }
-    else { S.likes.add(id); await sb.from('sup_likes').insert({ user_id: S.user.id, track_id: id }); }
+    if (S.likes.has(id)) { S.likes.delete(id); sb.from('sup_likes').delete().eq('user_id', S.user.id).eq('track_id', id).then(() => {}); }
+    else { S.likes.add(id); sb.from('sup_likes').insert({ user_id: S.user.id, track_id: id }).then(() => {}); }
     syncLikes();
   }
   function syncLikes() {
-    document.querySelectorAll('[data-like]').forEach(b => {
-      const on = S.likes.has(b.dataset.like); b.textContent = on ? '♥' : '♡'; b.classList.toggle('on', on);
-    });
-    const cur = S.queue[S.qi]; const pl = $('#pLike');
-    if (cur) { const on = S.likes.has(cur.id); pl.textContent = on ? '♥' : '♡'; pl.classList.toggle('on', on); }
+    $$('[data-like]').forEach(b => setLikeBtn(b, S.likes.has(b.dataset.like)));
+    const cur = S.queue[S.qi];
+    $$('.js-like').forEach(b => setLikeBtn(b, !!cur && S.likes.has(cur.id)));
   }
+  function setLikeBtn(b, on) { b.innerHTML = ic(on ? 'heart-on' : 'heart'); b.classList.toggle('on', on); }
 
   // ---------- плеер ----------
-  function setQueue(list, idx) {
-    S.queue = list.slice(); S.qi = idx; playCurrent();
-  }
+  function setQueue(list, idx) { S.queue = list.slice(); S.qi = idx; playCurrent(); }
   function playCurrent() {
     const t = S.queue[S.qi]; if (!t) return;
     audio.src = pubUrl('audio', t.audio_path);
     audio.play().catch(() => toast('Не удалось воспроизвести'));
-    $('#pTitle').textContent = t.title; $('#pArtist').textContent = t.artist;
-    $('#pCover').src = t.cover_path ? pubUrl('covers', t.cover_path) : NOCOVER;
-    document.title = `${t.title} — supMUSIC`;
-    markNow(); syncLikes();
-    sb.rpc('sup_inc_plays', { track: t.id }).then(() => {});
+    renderPlayer(); markNow();
+    sb.rpc('sup_inc_plays', { track: t.id }).then(() => {}, () => {});
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, artwork: t.cover_path ? [{ src: pubUrl('covers', t.cover_path) }] : [] });
     }
   }
+  function renderPlayer() {
+    const t = S.queue[S.qi];
+    if (t) {
+      $$('.js-title').forEach(e => e.textContent = t.title);
+      $$('.js-artist').forEach(e => e.textContent = t.artist);
+      $$('.js-cover').forEach(e => e.innerHTML = cover(t));
+      $$('.js-bg').forEach(e => e.style.background = grad(t.title));
+      document.title = `${t.title} — supMUSIC`;
+    }
+    $$('.js-shuffle').forEach(b => b.classList.toggle('on', S.shuffle));
+    $$('.js-repeat').forEach(b => { b.classList.toggle('on', S.repeat > 0); b.innerHTML = ic('repeat'); b.title = ['Повтор выключен', 'Повторять всё', 'Повторять трек'][S.repeat]; b.style.opacity = S.repeat === 2 ? '1' : ''; b.dataset.one = S.repeat === 2 ? '1' : ''; });
+    renderPlayState(); syncLikes();
+  }
+  function renderPlayState() {
+    const playing = !audio.paused && !!audio.src;
+    document.body.classList.toggle('playing', playing);
+    $$('.js-play').forEach(b => b.innerHTML = ic(playing ? 'pause' : 'play'));
+  }
   function markNow() {
     const cur = S.queue[S.qi];
-    document.querySelectorAll('.row').forEach(r => r.classList.toggle('now', !!cur && r.dataset.id === cur.id));
+    $$('.row').forEach(r => r.classList.toggle('now', !!cur && r.dataset.id === cur.id));
   }
   function next(auto) {
     if (!S.queue.length) return;
@@ -90,31 +108,38 @@
     S.qi--; playCurrent();
   }
   function togglePlay() {
-    if (!S.queue.length) { if (S.list.length) setQueue(S.list, 0); return; }
+    if (!S.queue.length) { toast('Выбери трек или включи «Мою волну»'); return; }
     audio.paused ? audio.play() : audio.pause();
   }
-  audio.addEventListener('play', () => $('#pPlay').textContent = '⏸');
-  audio.addEventListener('pause', () => $('#pPlay').textContent = '▶');
+  const ACT = {
+    play: togglePlay, next: () => next(false), prev,
+    like: () => { const t = S.queue[S.qi]; if (t) toggleLike(t.id); },
+    shuffle: () => { S.shuffle = !S.shuffle; renderPlayer(); },
+    repeat: () => { S.repeat = (S.repeat + 1) % 3; renderPlayer(); },
+  };
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (b) { e.stopPropagation(); ACT[b.dataset.act]?.(); }
+  });
+  audio.addEventListener('play', renderPlayState);
+  audio.addEventListener('pause', renderPlayState);
   audio.addEventListener('ended', () => next(true));
+  let seeking = false;
   audio.addEventListener('timeupdate', () => {
     if (!audio.duration) return;
-    $('#pCur').textContent = fmt(audio.currentTime); $('#pDur').textContent = fmt(audio.duration);
-    if (!seeking) $('#pSeek').value = audio.currentTime / audio.duration * 1000;
+    const p = audio.currentTime / audio.duration;
+    $$('.js-cur').forEach(e => e.textContent = fmt(audio.currentTime));
+    $$('.js-dur').forEach(e => e.textContent = fmt(audio.duration));
+    $('#pLine').style.width = p * 100 + '%';
+    if (!seeking) $$('.js-seek').forEach(s => { s.value = p * 1000; paintRange(s); });
   });
-  let seeking = false;
-  $('#pSeek').addEventListener('input', () => { seeking = true; });
-  $('#pSeek').addEventListener('change', e => { if (audio.duration) audio.currentTime = e.target.value / 1000 * audio.duration; seeking = false; });
-  $('#pVol').addEventListener('input', e => audio.volume = e.target.value / 100);
-  $('#pPlay').onclick = togglePlay;
-  $('#pNext').onclick = () => next(false);
-  $('#pPrev').onclick = prev;
-  $('#pShuffle').onclick = e => { S.shuffle = !S.shuffle; e.currentTarget.classList.toggle('on', S.shuffle); };
-  $('#pRepeat').onclick = e => {
-    S.repeat = (S.repeat + 1) % 3;
-    e.currentTarget.textContent = S.repeat === 2 ? '🔂' : '🔁';
-    e.currentTarget.classList.toggle('on', S.repeat > 0);
-  };
-  $('#pLike').onclick = () => { const t = S.queue[S.qi]; if (t) toggleLike(t.id); };
+  function paintRange(r) { const v = (r.value - r.min) / (r.max - r.min) * 100; r.style.background = `linear-gradient(90deg,var(--accent) ${v}%,var(--s3) ${v}%)`; }
+  $$('.js-seek').forEach(s => {
+    s.addEventListener('input', () => { seeking = true; paintRange(s); });
+    s.addEventListener('change', () => { if (audio.duration) audio.currentTime = s.value / 1000 * audio.duration; seeking = false; });
+    paintRange(s);
+  });
+  const vol = $('#pVol'); paintRange(vol);
+  vol.addEventListener('input', e => { audio.volume = e.target.value / 100; paintRange(vol); });
   if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('play', () => audio.play());
     navigator.mediaSession.setActionHandler('pause', () => audio.pause());
@@ -124,34 +149,33 @@
   document.addEventListener('keydown', e => {
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.code === 'Escape') $('#full').hidden = true;
   });
+  $('.js-open').onclick = () => { if (S.queue.length) $('#full').hidden = false; };
+  $('#fullClose').onclick = () => $('#full').hidden = true;
 
-  // ---------- разметка списков ----------
+  // ---------- списки ----------
   function rowHtml(t, i, opts = {}) {
     const mine = S.user && t.owner === S.user.id;
     const on = S.likes.has(t.id);
     return `<div class="row" data-id="${t.id}" data-i="${i}">
-      <img class="cover" loading="lazy" src="${t.cover_path ? esc(pubUrl('covers', t.cover_path)) : NOCOVER}" alt="">
+      <div class="cv" data-play>${cover(t)}<div class="go">${ic('play')}</div><div class="eq"><u></u><u></u><u></u></div></div>
       <div class="info" data-play><div class="t">${esc(t.title)}</div><div class="a">${esc(t.artist)}${t.genre ? ' · ' + esc(t.genre) : ''}</div></div>
-      <button class="icon ${on ? 'on' : ''}" data-like="${t.id}" title="Нравится">${on ? '♥' : '♡'}</button>
-      <button class="icon add" data-add="${t.id}" title="В плейлист">＋</button>
+      <button class="ib ${on ? 'on' : ''}" data-like="${t.id}" aria-label="Нравится">${ic(on ? 'heart-on' : 'heart')}</button>
+      <button class="ib add" data-add="${t.id}" aria-label="В плейлист">${ic('plus')}</button>
       <span class="d">${fmt(t.duration)}</span>
-      ${opts.remove ? `<button class="icon" data-remove="${t.id}" title="Убрать из плейлиста">✕</button>`
-        : mine ? `<button class="icon" data-del="${t.id}" title="Удалить трек">🗑</button>` : '<span></span>'}
+      ${opts.remove ? `<button class="ib" data-remove="${t.id}" aria-label="Убрать из плейлиста">${ic('x')}</button>`
+        : mine ? `<button class="ib" data-del="${t.id}" aria-label="Удалить трек">${ic('trash')}</button>` : '<span></span>'}
     </div>`;
   }
-  function listHtml(tracks, opts) {
-    return tracks.length ? `<div class="list">${tracks.map((t, i) => rowHtml(t, i, opts)).join('')}</div>` : '<div class="empty">Здесь пока пусто</div>';
-  }
+  const listHtml = (tracks, opts) => tracks.length ? `<div class="list">${tracks.map((t, i) => rowHtml(t, i, opts)).join('')}</div>` : '<div class="empty">Здесь пока пусто</div>';
   function bindList(root, tracks, opts = {}) {
-    S.list = tracks;
-    root.querySelectorAll('.row').forEach(r => {
+    $$('.row', root).forEach(r => {
       const i = +r.dataset.i, t = tracks[i];
-      r.querySelector('[data-play]').onclick = () => setQueue(tracks, i);
-      r.querySelector('.cover').onclick = () => setQueue(tracks, i);
-      r.querySelector('[data-like]').onclick = () => toggleLike(t.id);
-      r.querySelector('[data-add]').onclick = () => addToPlaylist(t);
-      const del = r.querySelector('[data-del]');
+      $$('[data-play]', r).forEach(el => el.onclick = () => setQueue(tracks, i));
+      $('[data-like]', r).onclick = () => toggleLike(t.id);
+      $('[data-add]', r).onclick = () => addToPlaylist(t);
+      const del = $('[data-del]', r);
       if (del) del.onclick = async () => {
         if (!confirm(`Удалить «${t.title}»?`)) return;
         await sb.storage.from('audio').remove([t.audio_path]);
@@ -160,11 +184,15 @@
         if (error) return toast(error.message);
         toast('Трек удалён'); route();
       };
-      const rm = r.querySelector('[data-remove]');
+      const rm = $('[data-remove]', r);
       if (rm) rm.onclick = () => opts.remove(t);
     });
     markNow();
   }
+  function shelfHtml(tracks) {
+    return `<div class="shelf">${tracks.map((t, i) => `<div class="card" data-i="${i}"><div class="cv">${cover(t)}<span class="go">${ic('play')}</span></div><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div>`).join('')}</div>`;
+  }
+  function bindShelf(root, tracks) { $$('.card', root).forEach(c => c.onclick = () => setQueue(tracks, +c.dataset.i)); }
 
   // ---------- окна ----------
   function modal(html) {
@@ -190,7 +218,7 @@
       const r = up
         ? await sb.auth.signUp({ email, password, options: { data: { name: $('#aName', m).value.trim() || email.split('@')[0] } } })
         : await sb.auth.signInWithPassword({ email, password });
-      if (r.error) { err.textContent = r.error.message; return; }
+      if (r.error) { err.style.color = ''; err.textContent = r.error.message; return; }
       if (up && !r.data.session) { err.style.color = 'var(--accent)'; err.textContent = 'Проверь почту: мы отправили письмо для подтверждения.'; return; }
       closeModal(); toast('Добро пожаловать!');
     };
@@ -207,7 +235,7 @@
       const { error } = await sb.from('sup_playlist_tracks').insert({ playlist_id: id, track_id: t.id, position: count || 0 });
       closeModal(); toast(error ? (error.code === '23505' ? 'Уже в плейлисте' : error.message) : 'Добавлено');
     };
-    m.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => put(b.dataset.pl));
+    $$('[data-pl]', m).forEach(b => b.onclick = () => put(b.dataset.pl));
     $('#plCreate', m).onclick = async () => {
       const title = $('#plNew', m).value.trim(); if (!title) return;
       const { data, error } = await sb.from('sup_playlists').insert({ title }).select().single();
@@ -219,55 +247,60 @@
   // ---------- страницы ----------
   const view = $('#view');
   const GENRES = ['Поп', 'Рок', 'Рэп', 'Электроника', 'Джаз', 'Классика', 'Инди', 'Другое'];
+  const greeting = () => { const h = new Date().getHours(); return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер'; };
+  const needAuth = (title, text) => { view.innerHTML = `<h1>${title}</h1><div class="empty">${text}</div><button class="btn" id="goIn">Войти</button>`; $('#goIn').onclick = () => openAuth(); };
 
   async function pageHome() {
     view.innerHTML = '<div class="empty">Загрузка…</div>';
-    const [fresh, top] = await Promise.all([getTracks({ limit: 30 }), getTracks({ order: 'plays', limit: 10 })]);
-    view.innerHTML = `<div class="wave"><div><h1>Моя волна</h1><p>Случайная музыка из всего каталога</p></div><button id="waveBtn" title="Включить">▶</button></div>
-      <h2>Популярное</h2><div id="top"></div><h2>Новое</h2><div id="fresh"></div>`;
-    $('#top').innerHTML = listHtml(top); $('#fresh').innerHTML = listHtml(fresh);
+    const [fresh, top] = await Promise.all([getTracks({ limit: 30 }), getTracks({ order: 'plays', limit: 12 })]);
+    view.innerHTML = `<h1 class="hello">${greeting()}${S.profile?.name ? ', ' + esc(S.profile.name) : ''}</h1>
+      <div class="wave"><i></i><i></i><i></i><h1>Моя волна</h1><p>Бесконечная музыка из всего каталога</p><button class="play" id="waveBtn" aria-label="Включить">${ic('play')}</button></div>
+      ${top.length ? `<h2>Популярное</h2><div id="top">${shelfHtml(top)}</div>` : ''}
+      ${fresh.length ? `<h2>Новое</h2><div id="fresh">${shelfHtml(fresh)}</div><h2>Все треки</h2><div id="all">${listHtml(fresh)}</div>`
+        : '<div class="empty">В каталоге пока нет треков. Загрузи первый — вкладка «Загрузить».</div>'}`;
     $('#waveBtn').onclick = async () => {
       const pool = shuffleArr(await getTracks({ limit: 200 }));
       if (!pool.length) return toast('Каталог пока пуст');
-      S.shuffle = true; $('#pShuffle').classList.add('on'); setQueue(pool, 0);
+      S.shuffle = true; setQueue(pool, 0);
     };
-    bindList($('#top'), top); bindList($('#fresh'), fresh);
+    if (top.length) bindShelf($('#top'), top);
+    if (fresh.length) { bindShelf($('#fresh'), fresh); bindList($('#all'), fresh); }
   }
 
   async function pageSearch() {
-    view.innerHTML = `<h1>Поиск</h1><input id="q" placeholder="Трек или исполнитель" autofocus>
+    view.innerHTML = `<h1>Поиск</h1><div class="search">${ic('search')}<input id="q" placeholder="Трек или исполнитель" autocomplete="off"></div>
       <div class="chips">${GENRES.map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div><div id="res"></div>`;
-    let t, genre = '';
+    let t, genre = '', n = 0;
     const run = async () => {
-      const q = $('#q').value.trim();
-      const res = $('#res');
+      const q = $('#q').value.trim(), res = $('#res'), my = ++n;
       if (!q && !genre) { res.innerHTML = '<div class="empty">Начни вводить название или выбери жанр</div>'; return; }
       const tracks = await getTracks({ q, genre });
+      if (my !== n) return;
       res.innerHTML = listHtml(tracks); bindList(res, tracks);
     };
     $('#q').oninput = () => { clearTimeout(t); t = setTimeout(run, 250); };
-    view.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
+    $$('[data-g]', view).forEach(b => b.onclick = () => {
       genre = genre === b.dataset.g ? '' : b.dataset.g;
-      view.querySelectorAll('[data-g]').forEach(x => x.style.color = x.dataset.g === genre ? 'var(--accent)' : '');
+      $$('[data-g]', view).forEach(x => x.classList.toggle('on', x.dataset.g === genre));
       run();
     });
     run();
   }
 
   async function pageCollection() {
-    if (!S.user) { view.innerHTML = '<h1>Коллекция</h1><div class="empty">Войди, чтобы лайкать треки и собирать плейлисты.</div><button class="btn" id="goIn">Войти</button>'; $('#goIn').onclick = () => openAuth(); return; }
+    if (!S.user) return needAuth('Коллекция', 'Войди, чтобы лайкать треки и собирать плейлисты.');
     view.innerHTML = '<div class="empty">Загрузка…</div>';
     const ids = [...S.likes];
     const liked = ids.length ? (await sb.from('sup_tracks').select('*').in('id', ids)).data || [] : [];
     const mine = await getTracks({ owner: S.user.id });
     view.innerHTML = `<h1>Коллекция</h1>
-      <h2>Плейлисты</h2><div class="grid" id="pls">
-        ${S.playlists.map(p => `<div class="card" data-pl="${p.id}"><div class="pic">🎵</div><b>${esc(p.title)}</b><span>Плейлист</span></div>`).join('')}
-        <div class="card" id="newPl"><div class="pic">＋</div><b>Новый плейлист</b><span>&nbsp;</span></div></div>
+      <h2 style="margin-top:6px">Плейлисты</h2><div class="grid">
+        ${S.playlists.map(p => `<div class="card" data-pl="${p.id}"><div class="cv"><div class="ph" style="background:${grad(p.title)}">${esc(p.title.charAt(0))}</div></div><b>${esc(p.title)}</b><span>Плейлист</span></div>`).join('')}
+        <div class="card" id="newPl"><div class="cv"><div class="ph" style="background:var(--s2);color:var(--accent)">${ic('plus')}</div></div><b>Новый плейлист</b><span>&nbsp;</span></div></div>
       <h2>Мне нравится</h2><div id="liked"></div><h2>Мои загрузки</h2><div id="mine"></div>`;
     $('#liked').innerHTML = listHtml(liked); bindList($('#liked'), liked);
     $('#mine').innerHTML = listHtml(mine); bindList($('#mine'), mine);
-    view.querySelectorAll('[data-pl]').forEach(c => c.onclick = () => location.hash = `#/playlist/${c.dataset.pl}`);
+    $$('[data-pl]', view).forEach(c => c.onclick = () => location.hash = `#/playlist/${c.dataset.pl}`);
     $('#newPl').onclick = async () => {
       const title = prompt('Название плейлиста'); if (!title || !title.trim()) return;
       const { data, error } = await sb.from('sup_playlists').insert({ title: title.trim() }).select().single();
@@ -281,8 +314,8 @@
     if (!pl) { view.innerHTML = '<div class="empty">Плейлист не найден</div>'; return; }
     const { data } = await sb.from('sup_playlist_tracks').select('position, sup_tracks(*)').eq('playlist_id', id).order('position');
     const tracks = (data || []).map(x => x.sup_tracks).filter(Boolean);
-    view.innerHTML = `<h1>${esc(pl.title)}</h1>
-      <p><button class="btn" id="plPlay">▶ Играть</button> <button class="btn ghost" id="plDel">Удалить плейлист</button></p><div id="pt"></div>`;
+    view.innerHTML = `<div class="pl-head"><div class="cv"><div class="ph" style="background:${grad(pl.title)}">${esc(pl.title.charAt(0))}</div></div>
+      <div><h1>${esc(pl.title)}</h1><div class="acts"><button class="btn" id="plPlay">${ic('play')} Играть</button><button class="btn ghost" id="plDel">Удалить</button></div></div></div><div id="pt"></div>`;
     const box = $('#pt');
     box.innerHTML = listHtml(tracks, { remove: true });
     bindList(box, tracks, { remove: async t => {
@@ -297,7 +330,7 @@
   }
 
   function pageUpload() {
-    if (!S.user) { view.innerHTML = '<h1>Загрузить трек</h1><div class="empty">Чтобы загружать музыку, нужно войти.</div><button class="btn" id="goIn">Войти</button>'; $('#goIn').onclick = () => openAuth(); return; }
+    if (!S.user) return needAuth('Загрузить трек', 'Чтобы загружать музыку, нужно войти.');
     view.innerHTML = `<h1>Загрузить трек</h1><div class="form">
       <label>Аудиофайл (mp3, m4a, ogg, wav · до 50 МБ)<input type="file" id="uFile" accept="audio/*"></label>
       <label>Название<input id="uTitle"></label>
@@ -306,7 +339,7 @@
       <label>Обложка (необязательно)<input type="file" id="uCover" accept="image/*"></label>
       <div class="err" id="uErr"></div>
       <button class="btn" id="uGo">Опубликовать</button>
-      <p class="empty" style="padding:0">Загружай только то, на что у тебя есть права.</p></div>`;
+      <div class="sub" style="margin:0;font-size:13px">Загружай только то, на что у тебя есть права.</div></div>`;
     $('#uFile').onchange = e => {
       const f = e.target.files[0]; if (f && !$('#uTitle').value) $('#uTitle').value = f.name.replace(/\.[^.]+$/, '');
     };
@@ -324,14 +357,14 @@
           a.onloadedmetadata = () => { res(Math.round(a.duration) || 0); URL.revokeObjectURL(u); };
           a.onerror = () => res(0); a.src = u;
         });
-        const ext = (f.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '');
         const key = () => `${S.user.id}/${crypto.randomUUID()}`;
-        const audioPath = `${key()}.${ext}`;
+        const extOf = (file, d) => (file.name.split('.').pop() || d).toLowerCase().replace(/[^a-z0-9]/g, '') || d;
+        const audioPath = `${key()}.${extOf(f, 'mp3')}`;
         let r = await sb.storage.from('audio').upload(audioPath, f, { contentType: f.type || 'audio/mpeg' });
         if (r.error) throw r.error;
         let coverPath = null;
         if (c) {
-          coverPath = `${key()}.${(c.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+          coverPath = `${key()}.${extOf(c, 'jpg')}`;
           r = await sb.storage.from('covers').upload(coverPath, c, { contentType: c.type });
           if (r.error) throw r.error;
         }
@@ -345,7 +378,8 @@
   // ---------- роутер ----------
   async function route() {
     const [, page, arg] = (location.hash || '#/').split('/');
-    document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === (page || 'home') || (!page && a.dataset.nav === 'home') || (page === 'playlist' && a.dataset.nav === 'collection')));
+    const cur = page === 'playlist' ? 'collection' : (page || 'home');
+    $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === cur));
     view.scrollTop = 0;
     try {
       if (page === 'search') await pageSearch();
@@ -360,8 +394,8 @@
   function renderSideUser() {
     const el = $('#sideUser');
     el.innerHTML = S.user
-      ? `<b>${esc(S.profile?.name || S.user.email)}</b><button class="btn ghost" id="outBtn" style="margin-top:8px">Выйти</button>`
-      : '<button class="btn" id="inBtn">Войти</button>';
+      ? `<b>${esc(S.profile?.name || S.user.email)}</b><button class="btn ghost sm" id="outBtn">Выйти</button>`
+      : '<b style="color:var(--dim);font-weight:500">Войди, чтобы лайкать и загружать</b><button class="btn sm" id="inBtn">Войти</button>';
     const o = $('#outBtn'), i = $('#inBtn');
     if (o) o.onclick = () => sb.auth.signOut();
     if (i) i.onclick = () => openAuth();
@@ -369,6 +403,7 @@
 
   // ---------- старт ----------
   async function start() {
+    renderPlayer();
     if (!sb) {
       view.innerHTML = '<h1>supMUSIC</h1><div class="err">Supabase не подключён. Задай секреты SUPABASE_URL и SUPABASE_ANON_KEY в репозитории и перезапусти деплой.</div>';
       return;
