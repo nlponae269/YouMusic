@@ -1,88 +1,108 @@
--- YouMusic: база, хранилище и права доступа в Supabase.
--- Вставить целиком в Supabase → SQL Editor → New query → Run. Повторный запуск безопасен.
+-- supMUSIC: схема базы. Выполни целиком в Supabase → SQL Editor (можно повторно).
 
--- ---------- Треки ----------
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  name text not null default '',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.tracks (
-  id            uuid primary key default gen_random_uuid(),
-  owner         uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  uploader      text,
-  title         text not null check (char_length(title) between 1 and 200),
-  artist        text not null check (char_length(artist) between 1 and 200),
-  album         text check (char_length(album) <= 200),
-  lyrics        text check (char_length(lyrics) <= 20000),
-  -- pending → processing → ready | failed
-  status        text not null default 'pending' check (status in ('pending', 'processing', 'ready', 'failed')),
-  error         text,
-  source_path   text not null,   -- оригинал в приватном бакете incoming: <uid>/<id>.<ext>
-  cover_source  text,            -- обложка в incoming (необязательно)
-  audio_path    text,            -- отцензуренная версия в публичном бакете tracks
-  cover_path    text,
-  duration      real,
-  color         text,
-  peaks         jsonb,
-  censored      integer not null default 0,
-  processing_started timestamptz,
-  created_at    timestamptz not null default now(),
-  published_at  timestamptz
+  id uuid primary key default gen_random_uuid(),
+  owner uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 200),
+  artist text not null check (char_length(artist) between 1 and 200),
+  genre text,
+  duration int not null default 0,
+  audio_path text not null,
+  cover_path text,
+  plays bigint not null default 0,
+  created_at timestamptz not null default now()
 );
-alter table public.tracks add column if not exists processing_started timestamptz;
-alter table public.tracks add column if not exists has_lyrics boolean generated always as (coalesce(lyrics, '') <> '') stored;
-create index if not exists tracks_status_idx on public.tracks (status, published_at desc);
-create index if not exists tracks_owner_idx on public.tracks (owner, created_at desc);
+create index if not exists tracks_created_idx on public.tracks (created_at desc);
+create index if not exists tracks_plays_idx on public.tracks (plays desc);
 
--- Администраторы сайта (могут удалять любые треки)
-create table if not exists public.admins (
-  user_id uuid primary key references auth.users (id) on delete cascade
+create table if not exists public.likes (
+  user_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  track_id uuid not null references public.tracks(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, track_id)
 );
 
-create or replace function public.is_admin() returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.admins where user_id = auth.uid());
-$$;
+create table if not exists public.playlists (
+  id uuid primary key default gen_random_uuid(),
+  owner uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 100),
+  created_at timestamptz not null default now()
+);
 
--- Защита от спама: не больше 20 загрузок в сутки на пользователя
-create or replace function public.uploads_today() returns integer
-language sql stable security definer set search_path = public as $$
-  select count(*)::int from public.tracks
-  where owner = auth.uid() and created_at > now() - interval '1 day';
-$$;
+create table if not exists public.playlist_tracks (
+  playlist_id uuid not null references public.playlists(id) on delete cascade,
+  track_id uuid not null references public.tracks(id) on delete cascade,
+  position int not null default 0,
+  primary key (playlist_id, track_id)
+);
 
+-- профиль создаётся автоматически при регистрации
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, name)
+  values (new.id, coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)))
+  on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- счётчик прослушиваний
+create or replace function public.inc_plays(track uuid) returns void
+language sql security definer set search_path = public as $$
+  update public.tracks set plays = plays + 1 where id = track;
+$$;
+grant execute on function public.inc_plays(uuid) to anon, authenticated;
+
+-- права доступа (RLS)
+alter table public.profiles enable row level security;
 alter table public.tracks enable row level security;
-alter table public.admins enable row level security;
+alter table public.likes enable row level security;
+alter table public.playlists enable row level security;
+alter table public.playlist_tracks enable row level security;
 
-drop policy if exists "tracks: читать опубликованные и свои" on public.tracks;
-create policy "tracks: читать опубликованные и свои" on public.tracks
-  for select using (status = 'ready' or owner = auth.uid() or public.is_admin());
+drop policy if exists profiles_read on public.profiles;
+create policy profiles_read on public.profiles for select using (true);
+drop policy if exists profiles_update on public.profiles;
+create policy profiles_update on public.profiles for update using (id = auth.uid());
 
--- Пользователь может только поставить трек в очередь; публикует его обработчик модерации
-drop policy if exists "tracks: загружать свои" on public.tracks;
-create policy "tracks: загружать свои" on public.tracks
-  for insert to authenticated with check (
-    owner = auth.uid()
-    and status = 'pending'
-    and audio_path is null and cover_path is null and peaks is null and published_at is null
-    and split_part(source_path, '/', 1) = auth.uid()::text
-    and (cover_source is null or split_part(cover_source, '/', 1) = auth.uid()::text)
-    and public.uploads_today() < 20
-  );
+drop policy if exists tracks_read on public.tracks;
+create policy tracks_read on public.tracks for select using (true);
+drop policy if exists tracks_insert on public.tracks;
+create policy tracks_insert on public.tracks for insert to authenticated with check (owner = auth.uid());
+drop policy if exists tracks_update on public.tracks;
+create policy tracks_update on public.tracks for update to authenticated using (owner = auth.uid());
+drop policy if exists tracks_delete on public.tracks;
+create policy tracks_delete on public.tracks for delete to authenticated using (owner = auth.uid());
 
-drop policy if exists "tracks: удалять свои" on public.tracks;
-create policy "tracks: удалять свои" on public.tracks
-  for delete to authenticated using (owner = auth.uid() or public.is_admin());
+drop policy if exists likes_all on public.likes;
+create policy likes_all on public.likes for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
--- ---------- Хранилище ----------
--- incoming — приватный, сюда браузер загружает оригиналы (до 50 МБ)
--- tracks   — публичный, сюда обработчик кладёт отцензуренные треки и обложки
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('incoming', 'incoming', false, 52428800, array['audio/*', 'image/jpeg', 'image/png', 'image/webp'])
-on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+drop policy if exists playlists_all on public.playlists;
+create policy playlists_all on public.playlists for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
 
-insert into storage.buckets (id, name, public)
-values ('tracks', 'tracks', true)
-on conflict (id) do update set public = true;
+drop policy if exists pt_all on public.playlist_tracks;
+create policy pt_all on public.playlist_tracks for all to authenticated
+  using (exists (select 1 from public.playlists p where p.id = playlist_id and p.owner = auth.uid()))
+  with check (exists (select 1 from public.playlists p where p.id = playlist_id and p.owner = auth.uid()));
 
-drop policy if exists "incoming: загрузка в свою папку" on storage.objects;
-create policy "incoming: загрузка в свою папку" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'incoming' and (storage.foldername(name))[1] = auth.uid()::text);
+-- хранилище: публичные бакеты, писать можно только в свою папку <user_id>/
+insert into storage.buckets (id, name, public, file_size_limit) values
+  ('audio', 'audio', true, 52428800),
+  ('covers', 'covers', true, 5242880)
+on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit;
+
+drop policy if exists "sup upload" on storage.objects;
+create policy "sup upload" on storage.objects for insert to authenticated
+  with check (bucket_id in ('audio', 'covers') and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "sup delete" on storage.objects;
+create policy "sup delete" on storage.objects for delete to authenticated
+  using (bucket_id in ('audio', 'covers') and (storage.foldername(name))[1] = auth.uid()::text);
