@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>supMUSIC</title>
+<meta name="theme-color" content="#0b0b0b">
+<link rel="icon" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <a class="logo" href="#/"><span class="logo-dot"></span>supMUSIC</a>
+    <nav>
+      <a href="#/" data-nav="home">🏠 <span>Главное</span></a>
+      <a href="#/search" data-nav="search">🔍 <span>Поиск</span></a>
+      <a href="#/collection" data-nav="collection">❤️ <span>Коллекция</span></a>
+      <a href="#/upload" data-nav="upload">⬆️ <span>Загрузить</span></a>
+    </nav>
+    <div class="side-user" id="sideUser"></div>
+  </aside>
+  <main id="view" class="view"></main>
+</div>
+
+<footer class="player" id="player">
+  <div class="p-track">
+    <img id="pCover" alt="" class="cover">
+    <div class="p-meta"><b id="pTitle">Ничего не играет</b><span id="pArtist"></span></div>
+    <button class="icon" id="pLike" title="Нравится">♡</button>
+  </div>
+  <div class="p-center">
+    <div class="p-btns">
+      <button class="icon" id="pShuffle" title="Перемешать">🔀</button>
+      <button class="icon" id="pPrev" title="Назад">⏮</button>
+      <button class="play" id="pPlay" title="Играть">▶</button>
+      <button class="icon" id="pNext" title="Вперёд">⏭</button>
+      <button class="icon" id="pRepeat" title="Повтор">🔁</button>
+    </div>
+    <div class="p-seek"><span id="pCur">0:00</span><input type="range" id="pSeek" min="0" max="1000" value="0"><span id="pDur">0:00</span></div>
+  </div>
+  <div class="p-vol"><span>🔊</span><input type="range" id="pVol" min="0" max="100" value="80"></div>
+</footer>
+
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
