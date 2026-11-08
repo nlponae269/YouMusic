@@ -51,6 +51,11 @@
     S.likes = new Set((l.data || []).map(x => x.track_id));
     S.playlists = p.data || [];
     S.profile = pr.data;
+    if (!S.profile) { // аккаунт старше таблиц supMUSIC: создаём профиль сами
+      const name = S.user.user_metadata?.name || (S.user.email || 'user').split('@')[0];
+      const { data } = await sb.from('sup_profiles').upsert({ id: S.user.id, name }).select().maybeSingle();
+      S.profile = data || { id: S.user.id, name };
+    }
   }
   async function toggleLike(id) {
     if (!S.user) return openAuth();
