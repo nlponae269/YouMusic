@@ -1,0 +1,22 @@
+# ACE-Step 1.5 на процессоре. torch / torchvision / torchaudio ставятся отдельно (CPU-сборка), см. process.yml
+transformers>=4.51.0,<4.58.0
+diffusers>=0.37.0
+accelerate>=1.12.0
+huggingface_hub
+safetensors
+scipy
+soundfile
+loguru
+einops
+diskcache
+numba
+vector-quantize-pytorch>=1.27.15
+torchcodec>=0.9.1
+torchao>=0.16.0,<0.17.0
+toml
+peft
+modelscope
+typer-slim
+pytorch-wavelets
+pywavelets
+matplotlib
