@@ -73,6 +73,11 @@ drop trigger if exists sup_on_auth_user_created on auth.users;
 create trigger sup_on_auth_user_created after insert on auth.users
   for each row execute function public.sup_handle_new_user();
 
+-- профили для аккаунтов, созданных до этой схемы (иначе загрузка треков упирается в внешний ключ)
+insert into public.sup_profiles (id, name)
+select id, coalesce(raw_user_meta_data->>'name', split_part(email, '@', 1)) from auth.users
+on conflict do nothing;
+
 -- счётчик прослушиваний
 create or replace function public.sup_inc_plays(track uuid) returns void
 language sql security definer set search_path = public as $$
@@ -89,6 +94,8 @@ alter table public.sup_playlist_tracks enable row level security;
 
 drop policy if exists sup_profiles_read on public.sup_profiles;
 create policy sup_profiles_read on public.sup_profiles for select using (true);
+drop policy if exists sup_profiles_insert on public.sup_profiles;
+create policy sup_profiles_insert on public.sup_profiles for insert to authenticated with check (id = auth.uid());
 drop policy if exists sup_profiles_update on public.sup_profiles;
 create policy sup_profiles_update on public.sup_profiles for update using (id = auth.uid());
 
