@@ -23,7 +23,7 @@
 
   // ---------- данные ----------
   async function getTracks({ q, owner, genre, order = 'created_at', limit = 100 } = {}) {
-    let r = sb.from('tracks').select('*').order(order, { ascending: false }).limit(limit);
+    let r = sb.from('sup_tracks').select('*').order(order, { ascending: false }).limit(limit);
     if (q) { const p = `%${q.replace(/[%,()]/g, ' ')}%`; r = r.or(`title.ilike.${p},artist.ilike.${p}`); }
     if (owner) r = r.eq('owner', owner);
     if (genre) r = r.eq('genre', genre);
@@ -35,9 +35,9 @@
     S.likes = new Set(); S.playlists = [];
     if (!S.user) return;
     const [l, p, pr] = await Promise.all([
-      sb.from('likes').select('track_id').eq('user_id', S.user.id),
-      sb.from('playlists').select('*').eq('owner', S.user.id).order('created_at'),
-      sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle(),
+      sb.from('sup_likes').select('track_id').eq('user_id', S.user.id),
+      sb.from('sup_playlists').select('*').eq('owner', S.user.id).order('created_at'),
+      sb.from('sup_profiles').select('*').eq('id', S.user.id).maybeSingle(),
     ]);
     S.likes = new Set((l.data || []).map(x => x.track_id));
     S.playlists = p.data || [];
@@ -45,8 +45,8 @@
   }
   async function toggleLike(id) {
     if (!S.user) return openAuth();
-    if (S.likes.has(id)) { S.likes.delete(id); await sb.from('likes').delete().eq('user_id', S.user.id).eq('track_id', id); }
-    else { S.likes.add(id); await sb.from('likes').insert({ user_id: S.user.id, track_id: id }); }
+    if (S.likes.has(id)) { S.likes.delete(id); await sb.from('sup_likes').delete().eq('user_id', S.user.id).eq('track_id', id); }
+    else { S.likes.add(id); await sb.from('sup_likes').insert({ user_id: S.user.id, track_id: id }); }
     syncLikes();
   }
   function syncLikes() {
@@ -69,7 +69,7 @@
     $('#pCover').src = t.cover_path ? pubUrl('covers', t.cover_path) : NOCOVER;
     document.title = `${t.title} — supMUSIC`;
     markNow(); syncLikes();
-    sb.rpc('inc_plays', { track: t.id }).then(() => {});
+    sb.rpc('sup_inc_plays', { track: t.id }).then(() => {});
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, artwork: t.cover_path ? [{ src: pubUrl('covers', t.cover_path) }] : [] });
     }
@@ -156,7 +156,7 @@
         if (!confirm(`Удалить «${t.title}»?`)) return;
         await sb.storage.from('audio').remove([t.audio_path]);
         if (t.cover_path) await sb.storage.from('covers').remove([t.cover_path]);
-        const { error } = await sb.from('tracks').delete().eq('id', t.id);
+        const { error } = await sb.from('sup_tracks').delete().eq('id', t.id);
         if (error) return toast(error.message);
         toast('Трек удалён'); route();
       };
@@ -203,14 +203,14 @@
       <input id="plNew" placeholder="Новый плейлист">
       <button class="btn" id="plCreate">Создать и добавить</button>`);
     const put = async id => {
-      const { count } = await sb.from('playlist_tracks').select('*', { count: 'exact', head: true }).eq('playlist_id', id);
-      const { error } = await sb.from('playlist_tracks').insert({ playlist_id: id, track_id: t.id, position: count || 0 });
+      const { count } = await sb.from('sup_playlist_tracks').select('*', { count: 'exact', head: true }).eq('playlist_id', id);
+      const { error } = await sb.from('sup_playlist_tracks').insert({ playlist_id: id, track_id: t.id, position: count || 0 });
       closeModal(); toast(error ? (error.code === '23505' ? 'Уже в плейлисте' : error.message) : 'Добавлено');
     };
     m.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => put(b.dataset.pl));
     $('#plCreate', m).onclick = async () => {
       const title = $('#plNew', m).value.trim(); if (!title) return;
-      const { data, error } = await sb.from('playlists').insert({ title }).select().single();
+      const { data, error } = await sb.from('sup_playlists').insert({ title }).select().single();
       if (error) return toast(error.message);
       S.playlists.push(data); put(data.id);
     };
@@ -258,7 +258,7 @@
     if (!S.user) { view.innerHTML = '<h1>Коллекция</h1><div class="empty">Войди, чтобы лайкать треки и собирать плейлисты.</div><button class="btn" id="goIn">Войти</button>'; $('#goIn').onclick = () => openAuth(); return; }
     view.innerHTML = '<div class="empty">Загрузка…</div>';
     const ids = [...S.likes];
-    const liked = ids.length ? (await sb.from('tracks').select('*').in('id', ids)).data || [] : [];
+    const liked = ids.length ? (await sb.from('sup_tracks').select('*').in('id', ids)).data || [] : [];
     const mine = await getTracks({ owner: S.user.id });
     view.innerHTML = `<h1>Коллекция</h1>
       <h2>Плейлисты</h2><div class="grid" id="pls">
@@ -270,28 +270,28 @@
     view.querySelectorAll('[data-pl]').forEach(c => c.onclick = () => location.hash = `#/playlist/${c.dataset.pl}`);
     $('#newPl').onclick = async () => {
       const title = prompt('Название плейлиста'); if (!title || !title.trim()) return;
-      const { data, error } = await sb.from('playlists').insert({ title: title.trim() }).select().single();
+      const { data, error } = await sb.from('sup_playlists').insert({ title: title.trim() }).select().single();
       if (error) return toast(error.message);
       S.playlists.push(data); location.hash = `#/playlist/${data.id}`;
     };
   }
 
   async function pagePlaylist(id) {
-    const pl = S.playlists.find(p => p.id === id) || (await sb.from('playlists').select('*').eq('id', id).maybeSingle()).data;
+    const pl = S.playlists.find(p => p.id === id) || (await sb.from('sup_playlists').select('*').eq('id', id).maybeSingle()).data;
     if (!pl) { view.innerHTML = '<div class="empty">Плейлист не найден</div>'; return; }
-    const { data } = await sb.from('playlist_tracks').select('position, tracks(*)').eq('playlist_id', id).order('position');
-    const tracks = (data || []).map(x => x.tracks).filter(Boolean);
+    const { data } = await sb.from('sup_playlist_tracks').select('position, sup_tracks(*)').eq('playlist_id', id).order('position');
+    const tracks = (data || []).map(x => x.sup_tracks).filter(Boolean);
     view.innerHTML = `<h1>${esc(pl.title)}</h1>
       <p><button class="btn" id="plPlay">▶ Играть</button> <button class="btn ghost" id="plDel">Удалить плейлист</button></p><div id="pt"></div>`;
     const box = $('#pt');
     box.innerHTML = listHtml(tracks, { remove: true });
     bindList(box, tracks, { remove: async t => {
-      await sb.from('playlist_tracks').delete().eq('playlist_id', id).eq('track_id', t.id); pagePlaylist(id);
+      await sb.from('sup_playlist_tracks').delete().eq('playlist_id', id).eq('track_id', t.id); pagePlaylist(id);
     } });
     $('#plPlay').onclick = () => tracks.length && setQueue(tracks, 0);
     $('#plDel').onclick = async () => {
       if (!confirm('Удалить плейлист?')) return;
-      await sb.from('playlists').delete().eq('id', id);
+      await sb.from('sup_playlists').delete().eq('id', id);
       S.playlists = S.playlists.filter(p => p.id !== id); location.hash = '#/collection';
     };
   }
@@ -335,7 +335,7 @@
           r = await sb.storage.from('covers').upload(coverPath, c, { contentType: c.type });
           if (r.error) throw r.error;
         }
-        r = await sb.from('tracks').insert({ title, artist, genre: $('#uGenre').value, duration, audio_path: audioPath, cover_path: coverPath });
+        r = await sb.from('sup_tracks').insert({ title, artist, genre: $('#uGenre').value, duration, audio_path: audioPath, cover_path: coverPath });
         if (r.error) throw r.error;
         toast('Трек опубликован'); location.hash = '#/';
       } catch (e) { err.textContent = e.message || String(e); btn.disabled = false; btn.textContent = 'Опубликовать'; }
