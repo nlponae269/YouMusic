@@ -2,46 +2,104 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>supMUSIC</title>
-<meta name="theme-color" content="#0b0b0b">
+<meta name="theme-color" content="#0d0d0f">
 <link rel="icon" href="icon.svg">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="app">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3 3 10.5V21h6v-6h6v6h6V10.5z" fill="currentColor"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><path d="M10.5 3a7.5 7.5 0 0 1 5.9 12.1l4.3 4.3-1.4 1.4-4.3-4.3A7.5 7.5 0 1 1 10.5 3zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z" fill="currentColor"/></symbol>
+    <symbol id="i-lib" viewBox="0 0 24 24"><path d="M9 3v11.1A3.5 3.5 0 1 0 11 17V7.5h7V3z" fill="currentColor"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M11 16V7.8l-3 3L6.6 9.4 12 4l5.4 5.4-1.4 1.4-3-3V16zM5 19h14v2H5z" fill="currentColor"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2l2.200 6.300L20.500 10.500 14.200 12.700 12 19l-2.200-6.300L3.500 10.500 9.800 8.300zM19 15l1 2.500 2.500 1-2.500 1L19 22l-1-2.500-2.500-1 2.500-1z" fill="currentColor"/></symbol>
+    <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 4h10v2H4zm0 4h16v2H4zm0 4h10v2H4z" fill="currentColor"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z" fill="currentColor"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 5.2v13.6a.8.8 0 0 0 1.2.7l10.2-6.8a.8.8 0 0 0 0-1.4L6.2 4.5A.8.8 0 0 0 5 5.2zM17 5h2.5v14H17z" fill="currentColor"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 5.2v13.6a.8.8 0 0 1-1.200.7L7.600 12.700a.8.8 0 0 1 0-1.400l10.200-6.800A.8.8 0 0 1 19 5.200zM4.500 5H7v14H4.500z" fill="currentColor"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M17 3h4v4l-1.500-1.500-4 4-1.400-1.400 4-4zM3 6h4.500l8 10H21v2h-6.500l-8-10H3zm0 10h3.500l2-2.500 1.400 1.800L7.500 18H3zm12.500-5.400L17 12l-1.500 1.500L14 12z" fill="currentColor"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z" fill="currentColor"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5 4.600 13.300a5 5 0 0 1 7.100-7.100l.3.3.3-.3a5 5 0 0 1 7.100 7.100zM12 18l6-5.800a3 3 0 0 0-4.200-4.300L12 9.700 10.200 8A3 3 0 0 0 6 12.200z" fill="currentColor"/></symbol>
+    <symbol id="i-heart-on" viewBox="0 0 24 24"><path d="M12 20.500 4.600 13.300a5 5 0 0 1 7.100-7.100l.3.3.3-.3a5 5 0 0 1 7.100 7.100z" fill="currentColor"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" fill="currentColor"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M9 3h6l1 2h4v2H4V5h4zM6 9h12l-1 12H7z" fill="currentColor"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.400 5 12 10.600 17.600 5 19 6.400 13.400 12l5.600 5.600-1.400 1.400L12 13.400 6.400 19 5 17.600 10.600 12 5 6.400z" fill="currentColor"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M5.400 8 12 14.600 18.600 8 20 9.400l-8 8-8-8z" fill="currentColor"/></symbol>
+    <symbol id="i-vol" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9zm13.500 3a4.500 4.500 0 0 0-2.500-4v8a4.500 4.500 0 0 0 2.500-4zM14 3.200v2.100a7 7 0 0 1 0 13.400v2.100a9 9 0 0 0 0-17.600z" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<div class="shell">
   <aside class="side">
-    <a class="logo" href="#/"><span class="logo-dot"></span>supMUSIC</a>
-    <nav>
-      <a href="#/" data-nav="home">🏠 <span>Главное</span></a>
-      <a href="#/search" data-nav="search">🔍 <span>Поиск</span></a>
-      <a href="#/collection" data-nav="collection">❤️ <span>Коллекция</span></a>
-      <a href="#/upload" data-nav="upload">⬆️ <span>Загрузить</span></a>
+    <a class="logo" href="#/"><span class="logo-mark"></span><span>supMUSIC</span></a>
+    <nav class="nav">
+      <a href="#/" data-nav="home"><svg class="i"><use href="#i-home"/></svg><span>Главное</span></a>
+      <a href="#/search" data-nav="search"><svg class="i"><use href="#i-search"/></svg><span>Поиск</span></a>
+      <a href="#/collection" data-nav="collection"><svg class="i"><use href="#i-lib"/></svg><span>Коллекция</span></a>
+      <a href="#/create" data-nav="create"><svg class="i"><use href="#i-spark"/></svg><span>Создать песню</span></a>
+      <a href="#/upload" data-nav="upload"><svg class="i"><use href="#i-up"/></svg><span>Загрузить</span></a>
     </nav>
     <div class="side-user" id="sideUser"></div>
   </aside>
   <main id="view" class="view"></main>
 </div>
 
-<footer class="player" id="player">
-  <div class="p-track">
-    <img id="pCover" alt="" class="cover">
-    <div class="p-meta"><b id="pTitle">Ничего не играет</b><span id="pArtist"></span></div>
-    <button class="icon" id="pLike" title="Нравится">♡</button>
+<div class="player" id="player">
+  <div class="p-line"><i id="pLine"></i></div>
+  <div class="p-track js-open">
+    <div class="pc js-cover"></div>
+    <div class="p-meta"><b class="js-title">Ничего не играет</b><span class="js-artist">Выбери трек или включи «Мою волну»</span></div>
   </div>
+  <button class="ib js-like p-like" data-act="like" aria-label="Нравится"><svg class="i"><use href="#i-heart"/></svg></button>
   <div class="p-center">
     <div class="p-btns">
-      <button class="icon" id="pShuffle" title="Перемешать">🔀</button>
-      <button class="icon" id="pPrev" title="Назад">⏮</button>
-      <button class="play" id="pPlay" title="Играть">▶</button>
-      <button class="icon" id="pNext" title="Вперёд">⏭</button>
-      <button class="icon" id="pRepeat" title="Повтор">🔁</button>
+      <button class="ib hide-m js-shuffle" data-act="shuffle" aria-label="Перемешать"><svg class="i"><use href="#i-shuffle"/></svg></button>
+      <button class="ib hide-m" data-act="prev" aria-label="Назад"><svg class="i"><use href="#i-prev"/></svg></button>
+      <button class="play js-play" data-act="play" aria-label="Играть"><svg class="i"><use href="#i-play"/></svg></button>
+      <button class="ib" data-act="next" aria-label="Вперёд"><svg class="i"><use href="#i-next"/></svg></button>
+      <button class="ib hide-m js-repeat" data-act="repeat" aria-label="Повтор"><svg class="i"><use href="#i-repeat"/></svg></button>
     </div>
-    <div class="p-seek"><span id="pCur">0:00</span><input type="range" id="pSeek" min="0" max="1000" value="0"><span id="pDur">0:00</span></div>
+    <div class="seek hide-m"><span class="js-cur">0:00</span><input class="js-seek" type="range" min="0" max="1000" value="0"><span class="js-dur">0:00</span></div>
   </div>
-  <div class="p-vol"><span>🔊</span><input type="range" id="pVol" min="0" max="100" value="80"></div>
-</footer>
+  <div class="p-right"><svg class="i"><use href="#i-vol"/></svg><input type="range" id="pVol" min="0" max="100" value="80"></div>
+</div>
+
+<nav class="tabbar">
+  <a href="#/" data-nav="home"><svg class="i"><use href="#i-home"/></svg><span>Главное</span></a>
+  <a href="#/search" data-nav="search"><svg class="i"><use href="#i-search"/></svg><span>Поиск</span></a>
+  <a href="#/collection" data-nav="collection"><svg class="i"><use href="#i-lib"/></svg><span>Коллекция</span></a>
+  <a href="#/create" data-nav="create"><svg class="i"><use href="#i-spark"/></svg><span>Создать</span></a>
+  <a href="#/upload" data-nav="upload"><svg class="i"><use href="#i-up"/></svg><span>Загрузить</span></a>
+</nav>
+
+<div class="full" id="full" hidden>
+  <div class="full-bg js-bg"></div>
+  <div class="full-in">
+    <div class="full-top"><button class="ib" id="fullClose" aria-label="Свернуть"><svg class="i"><use href="#i-down"/></svg></button><span>Сейчас играет</span>
+      <button class="ib" id="lyBtn" aria-label="Текст песни"><svg class="i"><use href="#i-lyrics"/></svg></button></div>
+    <div class="full-body">
+      <div class="full-left">
+        <div class="full-cover js-cover"></div>
+        <div class="full-meta"><div><b class="js-title"></b><span class="js-artist"></span></div>
+          <button class="ib js-like" data-act="like" aria-label="Нравится"><svg class="i"><use href="#i-heart"/></svg></button></div>
+        <div class="seek"><span class="js-cur">0:00</span><input class="js-seek" type="range" min="0" max="1000" value="0"><span class="js-dur">0:00</span></div>
+        <div class="full-btns">
+          <button class="ib js-shuffle" data-act="shuffle" aria-label="Перемешать"><svg class="i"><use href="#i-shuffle"/></svg></button>
+          <button class="ib big" data-act="prev" aria-label="Назад"><svg class="i"><use href="#i-prev"/></svg></button>
+          <button class="play lg js-play" data-act="play" aria-label="Играть"><svg class="i"><use href="#i-play"/></svg></button>
+          <button class="ib big" data-act="next" aria-label="Вперёд"><svg class="i"><use href="#i-next"/></svg></button>
+          <button class="ib js-repeat" data-act="repeat" aria-label="Повтор"><svg class="i"><use href="#i-repeat"/></svg></button>
+        </div>
+      </div>
+      <div class="lyrics" id="lyrics"></div>
+    </div>
+  </div>
+</div>
 
 <div id="modal" class="modal" hidden></div>
 <div id="toast" class="toast" hidden></div>
