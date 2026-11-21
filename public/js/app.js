@@ -210,11 +210,27 @@
       ? `<p class="ly ${LY.synced ? '' : 'plain'}" data-i="${i}">${esc(l.text)}</p>`
       : `<div class="ly gap" data-i="${i}">${DOTS}</div>`).join(''));
     $$('#lyrics .ly').forEach(p => p.onclick = () => { if (LY.synced) { audio.currentTime = LY.lines[+p.dataset.i].t; lyTouched = 0; audio.play(); } });
-    if (!LY.synced) $('#lyCardT').innerHTML = LY.lines.map(l => `<p>${esc(l.text) || '&nbsp;'}</p>`).join('');
+    // карточка: те же строки лентой, которая плавно едет вверх
+    $('#lyCardT').innerHTML = LY.synced
+      ? `<div class="ly-card-list">${LY.lines.map((l, i) => `<p data-i="${i}">${l.text ? esc(l.text) : DOTS}</p>`).join('')}</div>`
+      : LY.lines.map(l => `<p>${esc(l.text) || '&nbsp;'}</p>`).join('');
     syncLyrics(true);
   }
-  let lyTouched = 0;
-  ['wheel', 'touchmove'].forEach(ev => $('#lyrics').addEventListener(ev, () => { lyTouched = Date.now(); }, { passive: true }));
+  let lyTouched = 0, lyAnim = 0;
+  ['wheel', 'touchstart', 'touchmove'].forEach(ev => $('#lyrics').addEventListener(ev, () => { lyTouched = Date.now(); cancelAnimationFrame(lyAnim); }, { passive: true }));
+  // своя плавная прокрутка: одинаково мягкая во всех браузерах
+  const ease = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  function glide(box, top, dur = 700) {
+    cancelAnimationFrame(lyAnim);
+    const from = box.scrollTop, to = Math.max(0, top), t0 = performance.now();
+    if (Math.abs(to - from) < 2) return;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur);
+      box.scrollTop = from + (to - from) * ease(k);
+      if (k < 1) lyAnim = requestAnimationFrame(step);
+    };
+    lyAnim = requestAnimationFrame(step);
+  }
   function drawLyrics(html) { const box = $('#lyrics'); box.innerHTML = html; box.scrollTop = 0; }
 
   // Режимы на телефоне: обложка → карточка с текстом (кнопка «Текст») → текст на весь экран (карточка или ↗)
@@ -259,18 +275,25 @@
         p.classList.toggle('cur', i === idx);
         p.classList.toggle('past', i < idx);
       });
-      // карточка: текущая строка и две следующие
-      if (gap) cardT.innerHTML = DOTS;
-      else cardT.innerHTML = [idx, idx + 1, idx + 2].map(i => LY.lines[i])
-        .filter((l, n) => l && (n === 0 || l.text))
-        .map((l, n) => `<p class="${n ? '' : 'now'}">${esc(l.text)}</p>`).join('');
+      // карточка: лента строк плавно сдвигается, текущая строка — на трети высоты
+      const list = $('.ly-card-list', cardT);
+      if (list) {
+        $$('p', list).forEach((p, i) => { p.className = i === Math.max(idx, 0) ? 'now' : i < idx ? 'past' : ''; });
+        const cp = list.querySelector(`p[data-i="${Math.max(idx, 0)}"]`);
+        if (force) list.style.transition = 'none';
+        if (cp) list.style.transform = `translateY(${Math.round(cardT.clientHeight * 0.3 - cp.offsetTop)}px)`;
+        if (force) { void list.offsetHeight; list.style.transition = ''; }
+      }
       const el = box.querySelector(`.ly[data-i="${Math.max(idx, 0)}"]`);
       // пока человек сам листает текст, не дёргаем его обратно
-      if (el && Date.now() - lyTouched > 3500) box.scrollTo({ top: el.offsetTop - box.clientHeight * 0.35, behavior: force ? 'auto' : 'smooth' });
+      if (el && Date.now() - lyTouched > 3500) {
+        const top = el.offsetTop - box.clientHeight * 0.35;
+        if (force) box.scrollTop = top; else glide(box, top);
+      }
     }
     if (gap) {
       const k = idx < 0 ? 0 : gapPart(idx, now);
-      paintDots(cardT, k);
+      paintDots(cardT.querySelector(`p[data-i="${idx}"]`) || cardT, k);
       if (idx >= 0) paintDots(box.querySelector(`.ly[data-i="${idx}"]`), k);
     }
   }

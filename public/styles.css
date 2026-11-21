@@ -202,11 +202,16 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .ly-card[hidden]{display:none}
 @keyframes fade{from{opacity:0}}
 .ly-exp{position:absolute;top:14px;right:14px;color:rgba(255,255,255,.85)}
-.ly-card-t{text-align:center;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent);max-height:100%}
+.ly-card-t{position:relative;flex:1;min-height:0;overflow:hidden;text-align:center;
+  -webkit-mask-image:linear-gradient(transparent,#000 12%,#000 72%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 72%,transparent)}
+/* лента строк в карточке: едет вверх мягко, строки плавно светлеют и гаснут */
+.ly-card-list{transition:transform .75s cubic-bezier(.22,1,.36,1);will-change:transform}
 .ly-card-t p{margin:0 0 18px;font-size:clamp(26px,8.4vw,40px);font-weight:900;line-height:1.02;letter-spacing:-.03em;text-transform:uppercase;
   color:rgba(255,255,255,.35);overflow-wrap:anywhere}
-.ly-card-t p.now{color:#fff;animation:rise .4s cubic-bezier(.2,.9,.3,1)}
-.ly-card-t.plain{overflow-y:auto;scrollbar-width:none;text-align:left;align-self:stretch}
+.ly-card-list p{transition:color .6s ease,opacity .6s ease,transform .6s cubic-bezier(.22,1,.36,1);transform:scale(.94);transform-origin:center}
+.ly-card-list p.now{color:#fff;transform:none}
+.ly-card-list p.past{opacity:0}
+.ly-card-t.plain{overflow-y:auto;scrollbar-width:none;text-align:left;-webkit-mask-image:none;mask-image:none}
 .ly-card-t.plain p{font-size:19px;font-weight:700;text-transform:none;color:#fff;margin:0 0 6px;line-height:1.35}
 @keyframes rise{from{opacity:0;transform:translateY(16px)}}
 .full.ly-on .full-cover{visibility:hidden}
@@ -221,7 +226,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .show-ly .full-art,.show-ly .full-meta,.show-ly .wave-by{display:none}
 .show-ly .full-left{flex:none;order:2}
 .ly{margin:0 0 26px;font-size:34px;font-weight:900;line-height:1.1;letter-spacing:-.03em;color:#fff;text-align:center;opacity:.25;cursor:pointer;
-  transition:opacity .45s,filter .45s,transform .45s;transform:scale(.96)}
+  transition:opacity .7s ease,filter .7s ease,transform .7s cubic-bezier(.22,1,.36,1);transform:scale(.95);will-change:opacity,transform}
 .ly[data-d="0"]{opacity:1;transform:none}
 .ly[data-d="1"]{opacity:.55}
 .ly[data-d="2"]{opacity:.4;filter:blur(.8px)}
