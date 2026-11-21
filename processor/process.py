@@ -413,7 +413,7 @@ def mark_checked(tid):
     save_state(state)
 
 
-def recensor(limit=3):
+def recensor(limit=10):
     """Словарь изменился — перепроверяем уже опубликованные треки: вырезаем новые слова
     из звука и прячем их в названии и тексте."""
     state = load_state()
