@@ -28,6 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Администраторы (по почте владельца)
+        run: python3 processor/admins.py
+
+      - name: Перенос треков старого YouMusic
+        run: python3 processor/migrate_old.py
+
+      - name: Треки из поиска (скачивание по заявкам)
+        run: python3 processor/importer.py
+
       - name: Есть ли что делать
         id: queue
         run: |
@@ -37,7 +46,7 @@ jobs:
           fi
           q() { curl -sf "$SUPABASE_URL/rest/v1/$1" -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY"; }
           gen=$(q "sup_tracks?select=id&status=eq.pending&source_path=like.*.gen&limit=1")
-          queue=$(q "sup_tracks?select=id&status=in.(pending,processing)&source_path=not.like.*.gen&limit=1")
+          queue=$(q "sup_tracks?select=id&status=in.(pending,processing)&source_path=not.like.*.gen&source_path=not.like.*.imp&limit=1")
           lyrics=$(q "sup_tracks?select=id&status=eq.ready&has_lyrics=eq.false&error=is.null&limit=1")
           failed=$(q "sup_tracks?select=id&status=eq.failed&created_at=lt.$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)&limit=1")
           recheck=$(python3 processor/needs_recensor.py)
