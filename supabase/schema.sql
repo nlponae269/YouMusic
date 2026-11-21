@@ -85,6 +85,17 @@ language sql security definer set search_path = public as $$
 $$;
 grant execute on function public.sup_inc_plays(uuid) to anon, authenticated;
 
+-- администраторы: назначаются автоматически по почте владельца (processor/admins.py)
+create table if not exists public.admins (
+  user_id uuid primary key references auth.users (id) on delete cascade
+);
+alter table public.admins enable row level security;
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+grant execute on function public.is_admin() to anon, authenticated;
+
 -- права доступа (RLS)
 alter table public.sup_profiles enable row level security;
 alter table public.sup_tracks enable row level security;
@@ -107,7 +118,7 @@ $$;
 
 -- видны опубликованные треки и свои собственные (в том числе ещё на проверке)
 drop policy if exists sup_tracks_read on public.sup_tracks;
-create policy sup_tracks_read on public.sup_tracks for select using (status = 'ready' or owner = auth.uid());
+create policy sup_tracks_read on public.sup_tracks for select using (status = 'ready' or owner = auth.uid() or public.is_admin());
 
 -- пользователь может только поставить трек в очередь; публикует его обработчик (service_role)
 drop policy if exists sup_tracks_insert on public.sup_tracks;
@@ -120,7 +131,7 @@ create policy sup_tracks_insert on public.sup_tracks for insert to authenticated
 );
 drop policy if exists sup_tracks_update on public.sup_tracks;
 drop policy if exists sup_tracks_delete on public.sup_tracks;
-create policy sup_tracks_delete on public.sup_tracks for delete to authenticated using (owner = auth.uid());
+create policy sup_tracks_delete on public.sup_tracks for delete to authenticated using (owner = auth.uid() or public.is_admin());
 
 drop policy if exists sup_likes_all on public.sup_likes;
 create policy sup_likes_all on public.sup_likes for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());

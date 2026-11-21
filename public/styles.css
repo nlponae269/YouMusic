@@ -127,18 +127,41 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .p-right{display:flex;align-items:center;gap:10px;justify-content:flex-end;color:var(--dim)}
 .p-right input{width:110px}
 
-/* полноэкранный плеер */
-.full{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:hidden;animation:up .25s ease}
+/* полноэкранный плеер (раскладка как в Яндекс Музыке) */
+.full{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:hidden;overflow:clip;animation:up .25s ease}
 .full[hidden]{display:none}
 @keyframes up{from{transform:translateY(40px);opacity:0}}
-.full-bg{position:absolute;inset:-20%;filter:blur(80px) saturate(1.4);opacity:.55;transition:background .4s}
-.full-in{position:relative;height:100%;max-width:460px;margin:0 auto;padding:max(18px,env(safe-area-inset-top)) 26px calc(26px + var(--safe));display:flex;flex-direction:column;gap:20px}
-.full-top{display:flex;align-items:center;justify-content:space-between;color:var(--dim);font-weight:600;font-size:14px}.full-top i{width:40px}
-.full-cover{width:100%;aspect-ratio:1;max-height:46vh;border-radius:24px;margin:auto;--ph:120px;box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:hidden;background:var(--s2);max-width:46vh}
-.full-meta{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.full-meta div{min-width:0}.full-meta b{display:block;font-size:24px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.full-meta span{color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.full-btns{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.full-bg{position:absolute;inset:-20%;filter:blur(80px) saturate(1.4);opacity:.7;transition:background .4s}
+.full-bg::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.18)}
+.full-in{position:relative;height:100%;max-width:460px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 22px calc(16px + var(--safe));display:flex;flex-direction:column;gap:14px}
+.full-top{display:flex;align-items:center;justify-content:space-between;color:rgba(255,255,255,.85);font-weight:600;font-size:15px}
+.full-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.full-left{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:14px}
+.full-art{position:relative;width:100%;max-width:46vh;aspect-ratio:1;margin:0 auto;flex-shrink:0}
+.full-cover{width:100%;height:100%;border-radius:22px;--ph:120px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden;background:var(--s2)}
+.full-meta{display:flex;align-items:center;gap:14px}
+.fm-cover{width:58px;height:58px;border-radius:50%;overflow:hidden;flex-shrink:0;--ph:24px;background:var(--s2)}
+.fm-cover img,.fm-cover .ph{width:100%;height:100%;object-fit:cover}
+.fm-text{flex:1;min-width:0}
+.fm-text b{display:block;font-size:22px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-text span{color:rgba(255,255,255,.6);display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.full .seek{display:grid;grid-template-columns:auto auto;grid-template-areas:"bar bar" "cur dur";gap:6px 0;font-size:13px;color:rgba(255,255,255,.6)}
+.full .seek input{grid-area:bar}.full .seek .js-dur{justify-self:end}
+.full-btns{display:flex;align-items:center;justify-content:space-between}
+.full-btns .ib{color:#fff}
+.full .play.lg{width:76px;height:76px;background:var(--accent);color:#111}
+.full .play.lg .i{width:32px;height:32px}
+.full-pills{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:14px}
+.pill{height:54px;border-radius:999px;display:grid;place-items:center;background:rgba(255,255,255,.12);color:#fff;border:2px solid transparent;transition:.2s}
+.pill.on{color:var(--accent)}
+#lyBtn.on{background:transparent;border-color:#fff;color:#fff}
+#lyBtn:disabled{opacity:.35}
+.wave-by{display:grid;justify-items:center;gap:2px;padding:12px;border-radius:22px;color:#fff;
+  background:linear-gradient(110deg,rgba(255,255,255,.16),rgba(255,255,255,.05) 45%,rgba(255,255,255,.2));}
+.wave-by small{opacity:.75;font-size:14px}
+.wave-by b{display:flex;align-items:center;gap:6px;font-size:20px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wave-by b .i{width:18px;height:18px}
+@media(max-height:720px){.wave-by{display:none}}
 
 /* окна */
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -173,36 +196,58 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
 .ib[data-one="1"]::after{content:"1";position:absolute;right:6px;bottom:5px;font-size:10px;font-weight:800;color:var(--accent)}
 
 /* ---- текст песни (как в Яндекс Музыке) ---- */
-.full-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:20px}
-.full-left{display:contents}
-.full-cover{order:1}.full-meta{order:3}.full .seek{order:4}.full-btns{order:5}
-.lyrics{order:2;display:none;flex:1;min-height:0;position:relative;overflow-y:auto;scrollbar-width:none;padding:38% 4px;
-  -webkit-mask-image:linear-gradient(transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(transparent,#000 14%,#000 86%,transparent)}
+/* карточка на месте обложки: текущая строка крупно заглавными, следующие бледнее */
+.ly-card{position:absolute;inset:0;border-radius:22px;background:rgba(255,255,255,.14);overflow:hidden;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:center;padding:52px 22px 20px;animation:fade .25s}
+.ly-card[hidden]{display:none}
+@keyframes fade{from{opacity:0}}
+.ly-exp{position:absolute;top:14px;right:14px;color:rgba(255,255,255,.85)}
+.ly-card-t{text-align:center;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent);max-height:100%}
+.ly-card-t p{margin:0 0 18px;font-size:clamp(26px,8.4vw,40px);font-weight:900;line-height:1.02;letter-spacing:-.03em;text-transform:uppercase;
+  color:rgba(255,255,255,.35);overflow-wrap:anywhere}
+.ly-card-t p.now{color:#fff;animation:rise .4s cubic-bezier(.2,.9,.3,1)}
+.ly-card-t.plain{overflow-y:auto;scrollbar-width:none;text-align:left;align-self:stretch}
+.ly-card-t.plain p{font-size:19px;font-weight:700;text-transform:none;color:#fff;margin:0 0 6px;line-height:1.35}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}}
+.full.ly-on .full-cover{visibility:hidden}
+
+/* текст на весь экран */
+.lyrics{display:none;flex:1;min-height:0;position:relative;overflow-y:auto;scrollbar-width:none;padding:0 4px;
+  -webkit-mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent);mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent)}
 .lyrics::-webkit-scrollbar{display:none}
-.show-ly .lyrics{display:block}.show-ly .full-cover{display:none}
-.show-ly #lyBtn{color:var(--accent)}
-.ly{margin:0 0 22px;font-size:27px;font-weight:800;line-height:1.22;letter-spacing:-.02em;color:#fff;opacity:.28;cursor:pointer;
-  transition:opacity .45s,filter .45s}
-.ly[data-d="0"]{opacity:1}
-.ly[data-d="1"]{opacity:.5}
-.ly[data-d="2"]{opacity:.38;filter:blur(.6px)}
-.ly[data-d="3"]{opacity:.3;filter:blur(1.2px)}
-.ly[data-d="4"]{opacity:.22;filter:blur(1.8px)}
-.ly.plain{opacity:.88;cursor:default;font-size:19px;font-weight:600;filter:none!important}
-.ly.dots{display:flex;gap:9px;align-items:center;height:36px}
-.ly.dots i{width:11px;height:11px;border-radius:50%;background:#fff}
-.ly.dots.cur i{animation:pulse 1.3s ease-in-out infinite}
-.ly.dots.cur i:nth-child(2){animation-delay:.22s}.ly.dots.cur i:nth-child(3){animation-delay:.44s}
-@keyframes pulse{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1.3)}}
-.ly-note{color:var(--dim);padding:6px 0;text-align:center;font-weight:600}
+/* отступы сверху и снизу — внутри прокрутки, чтобы блок с текстом мог сжиматься */
+.lyrics::before{content:"";display:block;height:28vh}.lyrics::after{content:"";display:block;height:45vh}
+.show-ly .lyrics{display:block}
+.show-ly .full-art,.show-ly .full-meta,.show-ly .wave-by{display:none}
+.show-ly .full-left{flex:none;order:2}
+.ly{margin:0 0 26px;font-size:34px;font-weight:900;line-height:1.1;letter-spacing:-.03em;color:#fff;text-align:center;opacity:.25;cursor:pointer;
+  transition:opacity .45s,filter .45s,transform .45s;transform:scale(.96)}
+.ly[data-d="0"]{opacity:1;transform:none}
+.ly[data-d="1"]{opacity:.55}
+.ly[data-d="2"]{opacity:.4;filter:blur(.8px)}
+.ly[data-d="3"]{opacity:.28;filter:blur(1.4px)}
+.ly[data-d="4"]{opacity:.18;filter:blur(2px)}
+.ly.past{opacity:.2;filter:blur(1.2px)}
+.ly.plain{opacity:.92;cursor:default;font-size:20px;font-weight:700;text-align:left;filter:none!important;transform:none;margin-bottom:8px}
+/* точки на проигрыше: загораются по одной */
+.dots4{display:flex;gap:12px;align-items:center;justify-content:center;height:40px}
+.dots4 i{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.3);transition:background .4s,transform .4s}
+.dots4 i.on{background:#fff;transform:scale(1.15)}
+.cur .dots4 i:not(.on),.ly-card-t .dots4 i:not(.on){animation:pulse 1.4s ease-in-out infinite}
+.dots4 i:nth-child(2){animation-delay:.2s!important}.dots4 i:nth-child(3){animation-delay:.4s!important}.dots4 i:nth-child(4){animation-delay:.6s!important}
+.ly-card-t .dots4 i{width:22px;height:22px}
+@keyframes pulse{0%,100%{opacity:.5;transform:scale(.85)}50%{opacity:1;transform:scale(1.05)}}
+.ly-note{color:rgba(255,255,255,.7);padding:6px 0;text-align:center;font-weight:600}
+
 @media(min-width:821px){
   .full-in{max-width:1100px;padding:28px 44px 32px}
   .full-body{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:64px;align-items:center}
-  .full-left{display:flex;flex-direction:column;gap:20px}
-  .full-cover{max-width:none;max-height:none;width:100%;margin:0}
-  .lyrics{display:block;height:calc(100vh - 150px);flex:none;padding:30% 4px}
-  .ly{font-size:36px}.ly.plain{font-size:22px}
-  #lyBtn{display:none}.show-ly .full-cover{display:block}
+  .full-left{justify-content:center}
+  .lyrics{display:block;height:calc(100vh - 140px);flex:none}
+  .ly{font-size:40px;text-align:left;transform-origin:left}.ly.plain{font-size:22px}
+  .show-ly .full-art,.show-ly .full-meta{display:block}.show-ly .full-meta{display:flex}
+  #lyBtn,.ly-card,.ly-exp{display:none!important}
+  .full.ly-on .full-cover{visibility:visible}
 }
 
 /* ---- статусы, значки, формы ---- */
@@ -216,3 +261,25 @@ em.st{font-style:normal;color:var(--accent)}em.st-failed{color:#ff7b7b}
 .form .check{flex-direction:row;align-items:center;gap:10px;color:var(--text);font-size:15px}
 .form .check input{width:auto}
 .chip.sm{padding:4px 10px;font-size:12px;margin-left:6px}
+
+/* ---- источник трека, голос, каталог для загрузки, баннер приложения ---- */
+.fm-src{display:block;font-size:12px;color:rgba(255,255,255,.55);margin-top:2px}
+.search .mic{position:absolute;right:6px;top:50%;transform:translateY(-50%);color:var(--dim)}
+.search .mic .i{position:static;transform:none;pointer-events:auto}
+.search .mic.on{color:var(--accent)}
+.search input{padding-right:50px}
+.link{color:var(--dim);font-size:14px;text-decoration:underline;text-underline-offset:3px;align-self:center;padding:4px}
+.link:hover{color:var(--text)}
+.olist{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.orow{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:14px;padding:8px;border-radius:14px}
+.orow:hover,.orow.pv{background:var(--s1)}
+.orow .cv{position:relative;width:52px;height:52px;border-radius:10px;overflow:hidden;--ph:20px}
+.orow .cv img,.orow .cv .ph{width:100%;height:100%;object-fit:cover;display:block}
+.orow .go{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.35);color:#fff}
+.orow .info{min-width:0}.orow .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orow .a{color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orow .btn .i{width:18px;height:18px}
+.btn:disabled{opacity:.55;cursor:default}
+.app-ban{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:20px;background:var(--s1);border:1px solid var(--line);margin:0 0 18px}
+.app-ban .logo-mark{width:40px;height:40px;flex-shrink:0}
+.app-ban div{flex:1;min-width:0}.app-ban b{display:block}.app-ban span{color:var(--dim);font-size:13px}

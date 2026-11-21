@@ -1,6 +1,8 @@
 'use strict';
 (() => {
   const cfg = window.SUP_CFG || {};
+  // ссылка из письма «сброс пароля» приходит с #...type=recovery — запоминаем до того, как Supabase заберёт токен
+  const AUTH_HASH = new URLSearchParams(location.hash.replace(/^#/, ''));
   const sb = cfg.url && cfg.key && window.supabase ? window.supabase.createClient(cfg.url, cfg.key) : null;
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -30,9 +32,9 @@
   // ---------- данные ----------
   const COLS = 'id,owner,title,artist,album,genre,duration,audio_path,cover_path,plays,status,error,created_at';
   const AI_ALBUM = 'Сгенерировано нейросетью';
-  async function getTracks({ q, owner, genre, order = 'created_at', limit = 100 } = {}) {
+  async function getTracks({ q, owner, genre, all, order = 'created_at', limit = 100 } = {}) {
     let r = sb.from('sup_tracks').select(COLS).order(order, { ascending: false }).limit(limit);
-    if (!owner) r = r.eq('status', 'ready');
+    if (!owner && !all) r = r.eq('status', 'ready');
     if (q) { const p = `%${q.replace(/[%,()]/g, ' ')}%`; r = r.or(`title.ilike.${p},artist.ilike.${p}`); }
     if (owner) r = r.eq('owner', owner);
     if (genre) r = r.eq('genre', genre);
@@ -41,8 +43,9 @@
     return data || [];
   }
   async function loadUserData() {
-    S.likes = new Set(); S.playlists = []; S.profile = null;
+    S.likes = new Set(); S.playlists = []; S.profile = null; S.admin = false;
     if (!S.user) return;
+    sb.rpc('is_admin').then(({ data }) => { S.admin = !!data; }, () => {});
     const [l, p, pr] = await Promise.all([
       sb.from('sup_likes').select('track_id').eq('user_id', S.user.id),
       sb.from('sup_playlists').select('*').eq('owner', S.user.id).order('created_at'),
@@ -89,6 +92,8 @@
       $$('.js-artist').forEach(e => e.textContent = t.artist);
       $$('.js-cover').forEach(e => e.innerHTML = cover(t));
       $$('.js-bg').forEach(e => e.style.background = grad(t.title));
+      const src = /^Jamendo #(\d+)/.exec(t.album || '');
+      $$('.js-src').forEach(e => { e.hidden = !src; if (src) { e.href = `https://www.jamendo.com/track/${src[1]}`; e.textContent = `${t.album.replace(/#\d+ /, '')} ↗`; } });
       document.title = `${t.title} — supMUSIC`;
     }
     $$('.js-shuffle').forEach(b => b.classList.toggle('on', S.shuffle));
@@ -165,21 +170,23 @@
 
   // ---------- текст песни (как в Яндекс Музыке) ----------
   const lyricsCache = new Map();
-  const LY = { id: null, lines: [], synced: false, cur: -2 };
+  const LY = { id: null, lines: [], synced: false, cur: -2, card: localStorage.getItem('supLyCard') !== '0' };
+  const DOTS = '<span class="dots4"><i></i><i></i><i></i><i></i></span>';
 
-  // LRC: «[01:23.45] строка». Без таймкодов текст показывается целиком, без подсветки
+  // LRC: «[01:23.45] строка». Пустая строка с таймкодом — проигрыш (точки).
+  // Без таймкодов текст показывается целиком, без подсветки
   function parseLyrics(raw) {
     raw = (raw || '').trim();
     if (!raw) return { lines: [], synced: false };
     const lines = [];
     for (const row of raw.split(/\r?\n/)) {
-      const text = row.replace(/\[[^\]]*\]/g, '').trim();
+      const text = row.replace(/\[[^\]]*\]/g, '').trim().replace(/^♪$/, '');
       for (const m of row.matchAll(/\[(\d{1,2}):(\d{2}(?:[.:]\d{1,3})?)\]/g)) lines.push({ t: +m[1] * 60 + parseFloat(m[2].replace(':', '.')), text });
     }
     if (lines.length) {
       lines.sort((a, b) => a.t - b.t);
-      if (lines[0].t > 6) lines.unshift({ t: 0, text: '' }); // вступление: три точки
-      return { lines, synced: true };
+      if (lines[0].t > 4) lines.unshift({ t: 0, text: '' }); // вступление — точки
+      return { lines: lines.filter((l, i) => l.text || lines[i - 1]?.text !== ''), synced: true };
     }
     return { lines: raw.split(/\r?\n/).map(text => ({ t: 0, text: text.trim() })), synced: false };
   }
@@ -187,6 +194,7 @@
   async function loadLyrics(t) {
     LY.id = t.id; LY.lines = []; LY.synced = false; LY.cur = -2;
     drawLyrics('<div class="ly-note">Загружаю текст…</div>');
+    renderLyMode();
     let raw = lyricsCache.get(t.id);
     if (raw === undefined) {
       const { data } = await sb.from('sup_tracks').select('lyrics').eq('id', t.id).maybeSingle();
@@ -196,39 +204,116 @@
     if (LY.id !== t.id) return; // за это время включили другой трек
     Object.assign(LY, parseLyrics(raw), { cur: -2 });
     $('#full').classList.toggle('no-ly', !LY.lines.length);
+    renderLyMode();
     if (!LY.lines.length) return drawLyrics('<div class="ly-note">Текста для этого трека пока нет</div>');
     drawLyrics(LY.lines.map((l, i) => l.text
       ? `<p class="ly ${LY.synced ? '' : 'plain'}" data-i="${i}">${esc(l.text)}</p>`
-      : `<p class="ly dots" data-i="${i}"><i></i><i></i><i></i></p>`).join(''));
-    $$('#lyrics .ly').forEach(p => p.onclick = () => { if (LY.synced) { audio.currentTime = LY.lines[+p.dataset.i].t; audio.play(); } });
+      : `<div class="ly gap" data-i="${i}">${DOTS}</div>`).join(''));
+    $$('#lyrics .ly').forEach(p => p.onclick = () => { if (LY.synced) { audio.currentTime = LY.lines[+p.dataset.i].t; lyTouched = 0; audio.play(); } });
+    if (!LY.synced) $('#lyCardT').innerHTML = LY.lines.map(l => `<p>${esc(l.text) || '&nbsp;'}</p>`).join('');
     syncLyrics(true);
   }
   let lyTouched = 0;
   ['wheel', 'touchmove'].forEach(ev => $('#lyrics').addEventListener(ev, () => { lyTouched = Date.now(); }, { passive: true }));
-  $('#lyBtn').onclick = () => $('#full').classList.toggle('show-ly');
   function drawLyrics(html) { const box = $('#lyrics'); box.innerHTML = html; box.scrollTop = 0; }
+
+  // Режимы на телефоне: обложка → карточка с текстом (кнопка «Текст») → текст на весь экран (карточка или ↗)
+  function renderLyMode() {
+    const full = $('#full'), has = LY.lines.length > 0;
+    if (!has) full.classList.remove('show-ly');
+    const card = LY.card && has && !full.classList.contains('show-ly');
+    $('#lyCard').hidden = !card;
+    $('#lyCardT').classList.toggle('plain', !LY.synced);
+    full.classList.toggle('ly-on', card);
+    $('#lyBtn').disabled = !has;
+    $('#lyBtn').classList.toggle('on', has && (LY.card || full.classList.contains('show-ly')));
+  }
+  $('#lyBtn').onclick = () => {
+    const full = $('#full');
+    if (full.classList.contains('show-ly')) full.classList.remove('show-ly');
+    else { LY.card = !LY.card; localStorage.setItem('supLyCard', LY.card ? '1' : '0'); }
+    renderLyMode(); syncLyrics(true);
+  };
+  const openLyFull = () => { $('#full').classList.add('show-ly'); renderLyMode(); lyTouched = 0; syncLyrics(true); };
+  $('#lyCard').onclick = openLyFull;
+  $('#lyExp').onclick = e => { e.stopPropagation(); openLyFull(); };
+
+  // какая доля проигрыша прошла: точки загораются по одной
+  const gapPart = (i, now) => {
+    const end = LY.lines[i + 1]?.t ?? (audio.duration || LY.lines[i].t + 8);
+    return Math.max(0, Math.min(1, (now - LY.lines[i].t) / Math.max(1, end - LY.lines[i].t)));
+  };
+  const paintDots = (root, k) => { if (root) $$('.dots4 i', root).forEach((d, n) => d.classList.toggle('on', k >= (n + 1) / 5)); };
 
   function syncLyrics(force) {
     if (!LY.synced || !LY.lines.length) return;
     const now = audio.currentTime + 0.25; // подсветка чуть раньше, чтобы глаз успевал
     let idx = -1;
     for (let i = 0; i < LY.lines.length && LY.lines[i].t <= now; i++) idx = i;
-    if (idx === LY.cur && !force) return;
-    LY.cur = idx;
-    const box = $('#lyrics');
-    $$('.ly', box).forEach((p, i) => {
-      p.dataset.d = Math.min(Math.abs(i - idx), 4);
-      p.classList.toggle('cur', i === idx);
-    });
-    const el = box.querySelector(`.ly[data-i="${Math.max(idx, 0)}"]`);
-    // пока человек сам листает текст, не дёргаем его обратно
-    if (el && Date.now() - lyTouched > 3000) box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2, behavior: force ? 'auto' : 'smooth' });
+    const gap = idx < 0 || !LY.lines[idx].text;
+    const box = $('#lyrics'), cardT = $('#lyCardT');
+    if (idx !== LY.cur || force) {
+      LY.cur = idx;
+      $$('.ly', box).forEach((p, i) => {
+        p.dataset.d = i >= idx ? Math.min(i - idx, 4) : '';
+        p.classList.toggle('cur', i === idx);
+        p.classList.toggle('past', i < idx);
+      });
+      // карточка: текущая строка и две следующие
+      if (gap) cardT.innerHTML = DOTS;
+      else cardT.innerHTML = [idx, idx + 1, idx + 2].map(i => LY.lines[i])
+        .filter((l, n) => l && (n === 0 || l.text))
+        .map((l, n) => `<p class="${n ? '' : 'now'}">${esc(l.text)}</p>`).join('');
+      const el = box.querySelector(`.ly[data-i="${Math.max(idx, 0)}"]`);
+      // пока человек сам листает текст, не дёргаем его обратно
+      if (el && Date.now() - lyTouched > 3500) box.scrollTo({ top: el.offsetTop - box.clientHeight * 0.35, behavior: force ? 'auto' : 'smooth' });
+    }
+    if (gap) {
+      const k = idx < 0 ? 0 : gapPart(idx, now);
+      paintDots(cardT, k);
+      if (idx >= 0) paintDots(box.querySelector(`.ly[data-i="${idx}"]`), k);
+    }
   }
+
+  // ---------- скачать, поделиться, «Моя волна по треку» ----------
+  async function download() {
+    const t = S.queue[S.qi]; if (!t) return;
+    const url = pubUrl('audio', t.audio_path);
+    const name = `${t.artist} - ${t.title}.mp3`.replace(/[\\/:*?"<>|]/g, '_');
+    // в приложении для Android файл качает сам телефон — в «Загрузки»
+    if (window.YouMusicApp) return window.YouMusicApp.download(url, name);
+    toast('Скачиваю…');
+    try {
+      const blob = await (await fetch(url)).blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch { toast('Не удалось скачать'); }
+  }
+  $('#dlBtn').onclick = download;
+  $('#dlBtn2').onclick = download;
+  $('#shareBtn').onclick = async () => {
+    const t = S.queue[S.qi]; if (!t) return;
+    const url = `${location.origin}${location.pathname}#/track/${t.id}`;
+    try {
+      if (navigator.share) await navigator.share({ title: t.title, text: `${t.artist} — ${t.title}`, url });
+      else { await navigator.clipboard.writeText(url); toast('Ссылка скопирована'); }
+    } catch { /* окно «Поделиться» закрыли */ }
+  };
+  // волна по треку: сначала этот же исполнитель, потом весь каталог вперемешку
+  $('#waveBy').onclick = async () => {
+    const t = S.queue[S.qi]; if (!t) return;
+    const pool = await getTracks({ limit: 200 });
+    const same = shuffleArr(pool.filter(x => x.artist === t.artist && x.id !== t.id));
+    const rest = shuffleArr(pool.filter(x => x.artist !== t.artist));
+    S.queue = [t, ...same, ...rest]; S.qi = 0; S.shuffle = false; renderPlayer();
+    toast('Моя волна по треку «' + t.title + '»');
+  };
 
   // ---------- списки ----------
   const STATUS = { pending: 'На проверке нейросетью…', processing: 'Проверяется нейросетью…', failed: 'Ошибка обработки' };
   function rowHtml(t, i, opts = {}) {
-    const mine = S.user && t.owner === S.user.id;
+    const mine = S.user && (t.owner === S.user.id || S.admin);
     const on = S.likes.has(t.id);
     const ready = t.status === 'ready' || !t.status;
     const sub = ready ? esc(t.artist) + (t.genre ? ' · ' + esc(t.genre) : '') + (t.album === AI_ALBUM ? ' <em class="ai">ИИ</em>' : '')
@@ -287,15 +372,17 @@
       <input id="aPass" type="password" placeholder="Пароль (от 6 символов)" autocomplete="${up ? 'new-password' : 'current-password'}">
       <div class="err" id="aErr"></div>
       <button class="btn" id="aGo">${up ? 'Создать аккаунт' : 'Войти'}</button>
-      <button class="btn ghost" id="aSwitch">${up ? 'Уже есть аккаунт' : 'Нет аккаунта? Регистрация'}</button>`);
+      <button class="btn ghost" id="aSwitch">${up ? 'Уже есть аккаунт' : 'Нет аккаунта? Регистрация'}</button>
+      ${up ? '' : '<button class="link" id="aForgot">Забыли пароль?</button>'}`);
     $('#aSwitch', m).onclick = () => openAuth(up ? 'in' : 'up');
+    if (!up) $('#aForgot', m).onclick = () => openReset($('#aEmail', m).value.trim());
     $('#aGo', m).onclick = async () => {
       const email = $('#aEmail', m).value.trim(), password = $('#aPass', m).value, err = $('#aErr', m);
       err.textContent = '';
       const r = up
         ? await sb.auth.signUp({ email, password, options: { data: { name: $('#aName', m).value.trim() || email.split('@')[0] } } })
         : await sb.auth.signInWithPassword({ email, password });
-      if (r.error) { err.style.color = ''; err.textContent = r.error.message; return; }
+      if (r.error) { err.style.color = ''; err.textContent = AUTH_ERR[r.error.message] || r.error.message; return; }
       if (up && !r.data.session) { err.style.color = 'var(--accent)'; err.textContent = 'Проверь почту: мы отправили письмо для подтверждения.'; return; }
       closeModal(); toast('Добро пожаловать!');
     };
@@ -330,7 +417,7 @@
   async function pageHome() {
     view.innerHTML = '<div class="empty">Загрузка…</div>';
     const [fresh, top] = await Promise.all([getTracks({ limit: 30 }), getTracks({ order: 'plays', limit: 12 })]);
-    view.innerHTML = `<h1 class="hello">${greeting()}${S.profile?.name ? ', ' + esc(S.profile.name) : ''}</h1>
+    view.innerHTML = `<h1 class="hello">${greeting()}${S.profile?.name ? ', ' + esc(S.profile.name) : ''}</h1>${appBanner()}
       <div class="wave"><i></i><i></i><i></i><h1>Моя волна</h1><p>Бесконечная музыка из всего каталога</p><button class="play" id="waveBtn" aria-label="Включить">${ic('play')}</button></div>
       ${top.length ? `<h2>Популярное</h2><div id="top">${shelfHtml(top)}</div>` : ''}
       ${fresh.length ? `<h2>Новое</h2><div id="fresh">${shelfHtml(fresh)}</div><h2>Все треки</h2><div id="all">${listHtml(fresh)}</div>`
@@ -340,20 +427,25 @@
       if (!pool.length) return toast('Каталог пока пуст');
       S.shuffle = true; setQueue(pool, 0);
     };
+    bindAppBanner();
     if (top.length) bindShelf($('#top'), top);
     if (fresh.length) { bindShelf($('#fresh'), fresh); bindList($('#all'), fresh); }
   }
 
   async function pageSearch() {
-    view.innerHTML = `<h1>Поиск</h1><div class="search">${ic('search')}<input id="q" placeholder="Трек или исполнитель" autocomplete="off"></div>
-      <div class="chips">${GENRES.map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div><div id="res"></div>`;
+    view.innerHTML = `<h1>Поиск</h1><div class="search">${ic('search')}<input id="q" placeholder="Трек или исполнитель" autocomplete="off">
+      <button class="ib mic" id="mic" aria-label="Голосовой поиск">${ic('mic')}</button></div>
+      <div class="chips">${GENRES.map(g => `<button class="chip" data-g="${g}">${g}</button>`).join('')}</div><div id="res"></div><div id="open"></div>`;
+    $('#mic').onclick = () => voiceSearch(text => { $('#q').value = text; run(); });
     let t, genre = '', n = 0;
     const run = async () => {
       const q = $('#q').value.trim(), res = $('#res'), my = ++n;
       if (!q && !genre) { res.innerHTML = '<div class="empty">Начни вводить название или выбери жанр</div>'; return; }
       const tracks = await getTracks({ q, genre });
       if (my !== n) return;
-      res.innerHTML = listHtml(tracks); bindList(res, tracks);
+      res.innerHTML = tracks.length || !q ? listHtml(tracks) : `<div class="empty">На сайте по запросу «${esc(q)}» ничего нет — поищем в каталоге ↓</div>`;
+      bindList(res, tracks);
+      openSearch(q);
     };
     $('#q').oninput = () => { clearTimeout(t); t = setTimeout(run, 250); };
     $$('[data-g]', view).forEach(b => b.onclick = () => {
@@ -361,6 +453,8 @@
       $$('[data-g]', view).forEach(x => x.classList.toggle('on', x.dataset.g === genre));
       run();
     });
+    const preset = decodeURIComponent((location.hash.split('?q=')[1] || ''));
+    if (preset) $('#q').value = preset;
     run();
   }
 
@@ -374,9 +468,10 @@
       <h2 style="margin-top:6px">Плейлисты</h2><div class="grid">
         ${S.playlists.map(p => `<div class="card" data-pl="${p.id}"><div class="cv"><div class="ph" style="background:${grad(p.title)}">${esc(p.title.charAt(0))}</div></div><b>${esc(p.title)}</b><span>Плейлист</span></div>`).join('')}
         <div class="card" id="newPl"><div class="cv"><div class="ph" style="background:var(--s2);color:var(--accent)">${ic('plus')}</div></div><b>Новый плейлист</b><span>&nbsp;</span></div></div>
-      <h2>Мне нравится</h2><div id="liked"></div><h2>Мои загрузки</h2><div id="mine"></div>`;
+      <h2>Мне нравится</h2><div id="liked"></div><h2>Мои загрузки</h2><div id="mine"></div>${S.admin ? '<h2>Все треки (админ)</h2><div id="allAdm"></div>' : ''}`;
     $('#liked').innerHTML = listHtml(liked); bindList($('#liked'), liked);
     $('#mine').innerHTML = listHtml(mine); bindList($('#mine'), mine);
+    if (S.admin) { const all = await getTracks({ all: true, limit: 300 }); $('#allAdm').innerHTML = listHtml(all); bindList($('#allAdm'), all); }
     $$('[data-pl]', view).forEach(c => c.onclick = () => location.hash = `#/playlist/${c.dataset.pl}`);
     $('#newPl').onclick = async () => {
       const title = prompt('Название плейлиста'); if (!title || !title.trim()) return;
@@ -515,18 +610,221 @@
     };
   }
 
+  // ---------- голосовой поиск ----------
+  // в приложении для Android распознаёт речь сам телефон (голосовой ввод Google)
+  let voiceDone = null;
+  window.__ymVoice = text => { if (voiceDone) voiceDone(text); else location.hash = `#/search?q=${encodeURIComponent(text)}`; };
+  function voiceSearch(done) {
+    voiceDone = done;
+    if (window.YouMusicApp) return window.YouMusicApp.voice();
+    const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!R) return toast('Голосовой поиск не поддерживается этим браузером');
+    const r = new R(); r.lang = 'ru-RU'; r.interimResults = false;
+    r.onresult = e => done(e.results[0][0].transcript);
+    r.onerror = e => { if (e.error !== 'aborted' && e.error !== 'no-speech') toast('Не расслышал, попробуй ещё раз'); };
+    r.onend = () => $('#mic')?.classList.remove('on');
+    $('#mic')?.classList.add('on'); toast('Говори…'); r.start();
+  }
+
+  // ---------- загрузка из каталога: поиск → «Загрузить» → модерация ----------
+  // Openverse (музыка Jamendo под лицензиями Creative Commons, только с правом изменять — цензура меняет трек)
+  const OV = 'https://api.openverse.org/v1/audio/';
+  const OV_LIC = new Set(['by', 'by-sa', 'by-nc', 'by-nc-sa', 'cc0', 'pdm']);
+  const ovCache = new Map();
+  let openTimer, openN = 0, openItems = [], openPage = 1;
+  const preview = new Audio(); preview.preload = 'none';
+
+  async function ovFetch(url, tries = 2) {
+    for (let i = 1; ; i++) {
+      const c = new AbortController(), tm = setTimeout(() => c.abort(), 45000);
+      try {
+        const r = await fetch(url, { signal: c.signal });
+        if (r.status < 500 || i >= tries) return r;
+      } catch { if (i >= tries) throw new Error('Каталог не отвечает — попробуй ещё раз'); } finally { clearTimeout(tm); }
+    }
+  }
+  async function searchOpenverse(q, page = 1) {
+    const key = q + '#' + page;
+    if (ovCache.has(key)) return ovCache.get(key);
+    const p = new URLSearchParams({ q, license_type: 'modification', source: 'jamendo', page_size: '20', page: String(page) });
+    const r = await ovFetch(OV + '?' + p);
+    if (r.status === 429) throw new Error('Слишком много поисков подряд — подожди минуту');
+    if (!r.ok) throw new Error('Каталог сейчас недоступен');
+    const d = await r.json();
+    const items = d.results.filter(x => OV_LIC.has(x.license) && x.url && !x.mature && (!x.duration || x.duration <= 600000)).map(x => {
+      const artist = (x.creator || 'Неизвестный артист').replace(/\s*-\s*$/, '').trim();
+      let title = (x.title || 'Без названия').trim().replace(/^\d{1,2}[\s.)_-]+/, '');
+      if (title.toLowerCase().startsWith(artist.toLowerCase() + ' - ')) title = title.slice(artist.length + 3);
+      const alb = /\/album\/(\d+)/.exec(x.audio_set?.foreign_landing_url || '');
+      return {
+        jid: (/\/track\/(\d+)/.exec(x.foreign_landing_url || '') || [])[1] || '',
+        title: title.trim() || x.title, artist, url: x.url, duration: Math.round((x.duration || 0) / 1000),
+        licence: x.license === 'cc0' ? 'CC0' : x.license === 'pdm' ? 'Public Domain' : `CC ${x.license.toUpperCase()}${x.license_version ? ' ' + x.license_version : ''}`,
+        cover: alb ? `https://usercontent.jamendo.com/?type=album&id=${alb[1]}&width=300` : null,
+      };
+    }).filter(x => x.jid);
+    const res = { items, more: page < (d.page_count || 0) };
+    ovCache.set(key, res);
+    return res;
+  }
+  // что из каталога уже есть: на сайте или в очереди (номер трека Jamendo хранится в альбоме)
+  async function knownJamendo() {
+    const { data } = await sb.from('sup_tracks').select('id,album,status').like('album', 'Jamendo #%').limit(1000);
+    return new Map((data || []).map(t => [(/#(\d+)/.exec(t.album) || [])[1], t]));
+  }
+  function openRow(it, i, known) {
+    const k = known.get(it.jid);
+    const act = k ? (k.status === 'ready' ? `<button class="btn ghost sm" data-oact="play">${ic('play')} На сайте</button>`
+      : `<button class="btn ghost sm" disabled>В очереди</button>`)
+      : `<button class="btn sm" data-oact="import">${ic('dl')} Загрузить</button>`;
+    return `<div class="orow" data-o="${i}">
+      <button class="cv" data-oact="preview" aria-label="Послушать отрывок">${it.cover ? `<img loading="lazy" alt="" src="${esc(it.cover)}">` : `<div class="ph" style="background:${grad(it.title)}"></div>`}<span class="go">${ic('play')}</span></button>
+      <div class="info"><div class="t">${esc(it.title)}</div><div class="a">${esc(it.artist)} · ${fmt(it.duration)}</div></div>${act}</div>`;
+  }
+  function openSearch(q) {
+    clearTimeout(openTimer); preview.pause();
+    const box = $('#open'); if (!box) return;
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    const my = ++openN;
+    box.innerHTML = `<h2>Можно загрузить</h2><div class="empty">Ищу в каталоге свободной музыки… новый запрос бывает долгим, до полминуты.</div>`;
+    // пока человек печатает, каталог не дёргаем: у него лимит запросов
+    openTimer = setTimeout(async () => {
+      let res, known;
+      try { [res, known] = await Promise.all([searchOpenverse(q), knownJamendo()]); }
+      catch (e) { if (my === openN) box.innerHTML = `<h2>Можно загрузить</h2><div class="empty">${esc(e.message)}</div>`; return; }
+      if (my !== openN || !box.isConnected) return;
+      openItems = res.items; openPage = 1;
+      box.innerHTML = `<h2>Можно загрузить</h2><p class="sub">Свободные треки Jamendo. ▶ — отрывок, «Загрузить» — трек проверит нейросеть и выложит на сайт.</p>
+        ${res.items.length ? `<div class="olist">${res.items.map((it, i) => openRow(it, i, known)).join('')}</div>
+        ${res.more ? '<button class="btn ghost" id="oMore">Показать ещё</button>' : ''}` : '<div class="empty">В каталоге тоже ничего. Попробуй по-английски или другое название.</div>'}`;
+      const more = $('#oMore');
+      if (more) more.onclick = async () => {
+        more.disabled = true;
+        try {
+          const [r2, k2] = await Promise.all([searchOpenverse(q, openPage + 1), knownJamendo()]);
+          openPage++; const start = openItems.length; openItems = openItems.concat(r2.items);
+          $('.olist', box).insertAdjacentHTML('beforeend', r2.items.map((it, i) => openRow(it, start + i, k2)).join(''));
+          if (r2.more) more.disabled = false; else more.remove();
+        } catch (e) { more.disabled = false; toast(e.message); }
+      };
+    }, 700);
+  }
+  const resetPreview = () => $$('.orow').forEach(r => { r.classList.remove('pv'); const g = $('.go', r); if (g) g.innerHTML = ic('play'); });
+  preview.addEventListener('pause', () => { if (preview.paused) resetPreview(); });
+  audio.addEventListener('play', () => preview.pause());
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-oact]'); if (!b) return;
+    const row = b.closest('[data-o]'), it = openItems[+row.dataset.o]; if (!it) return;
+    const act = b.dataset.oact;
+    if (act === 'preview') {
+      const same = preview.src === it.url && !preview.paused;
+      resetPreview(); if (same) return preview.pause();
+      if (preview.src !== it.url) preview.src = it.url;
+      audio.pause(); preview.play().catch(() => toast('Не удалось включить отрывок'));
+      row.classList.add('pv'); $('.go', row).innerHTML = ic('pause');
+    } else if (act === 'play') {
+      const k = (await knownJamendo()).get(it.jid);
+      const { data } = await sb.from('sup_tracks').select(COLS).eq('id', k.id).maybeSingle();
+      if (data) setQueue([data], 0);
+    } else if (act === 'import') {
+      if (!S.user) return openAuth();
+      b.disabled = true;
+      try {
+        const id = crypto.randomUUID(), path = `${S.user.id}/${id}.imp`;
+        let r = await sb.storage.from('sup-incoming').upload(path, new Blob([JSON.stringify({ url: it.url, cover: it.cover })], { type: 'application/json' }), { contentType: 'application/json' });
+        if (r.error) throw r.error;
+        r = await sb.from('sup_tracks').insert({ id, title: it.title.slice(0, 200), artist: it.artist.slice(0, 200), duration: it.duration,
+          album: `Jamendo #${it.jid} · ${it.licence}`, source_path: path });
+        if (r.error) throw r.error;
+        b.className = 'btn ghost sm'; b.innerHTML = 'В очереди';
+        toast('Загружается. После проверки нейросетью трек появится на сайте');
+      } catch (ex) { b.disabled = false; toast(ex.message || String(ex)); }
+    }
+  });
+
+  // ---------- «Забыли пароль?» ----------
+  const AUTH_ERR = {
+    'Invalid login credentials': 'Неверная почта или пароль',
+    'User already registered': 'Такая почта уже зарегистрирована',
+    'Email not confirmed': 'Подтверди почту — ссылка в письме',
+    'New password should be different from the old password.': 'Новый пароль должен отличаться от старого',
+  };
+  function openReset(email = '') {
+    const m = modal(`<h2>Сброс пароля</h2><p class="sub" style="margin:0">Введи почту, с которой регистрировался. Придёт письмо со ссылкой — по ней задашь новый пароль.</p>
+      <input id="rEmail" type="email" placeholder="Почта" autocomplete="email" value="${esc(email)}">
+      <div class="err" id="rErr"></div><button class="btn" id="rGo">Прислать ссылку</button>
+      <button class="btn ghost" id="rBack">Вспомнил пароль — войти</button>`);
+    $('#rBack', m).onclick = () => openAuth();
+    $('#rGo', m).onclick = async () => {
+      const mail = $('#rEmail', m).value.trim(), err = $('#rErr', m);
+      if (!mail) return err.textContent = 'Введи почту';
+      $('#rGo', m).disabled = true;
+      const { error } = await sb.auth.resetPasswordForEmail(mail, { redirectTo: location.href.split('#')[0] });
+      if (error) {
+        $('#rGo', m).disabled = false;
+        return err.textContent = /rate limit|security purposes/i.test(error.message) ? 'Письмо недавно уже отправляли — подожди немного' : error.message;
+      }
+      modal(`<h2>Письмо отправлено</h2><p class="sub" style="margin:0">Открой письмо на <b>${esc(mail)}</b> и нажми на ссылку. Не видно — загляни в «Спам».</p>
+        <button class="btn" onclick="this.closest('.modal').hidden=true">Понятно</button>`);
+    };
+  }
+  function openNewPass() {
+    const m = modal(`<h2>Новый пароль</h2><p class="sub" style="margin:0">Придумай новый пароль — старый перестанет работать.</p>
+      <input id="nPass" type="password" placeholder="Новый пароль (от 6 символов)" autocomplete="new-password">
+      <input id="nPass2" type="password" placeholder="Ещё раз" autocomplete="new-password">
+      <div class="err" id="nErr"></div><button class="btn" id="nGo">Сохранить пароль</button>`);
+    $('#nGo', m).onclick = async () => {
+      const a = $('#nPass', m).value, b = $('#nPass2', m).value, err = $('#nErr', m);
+      if (a.length < 6) return err.textContent = 'Минимум 6 символов';
+      if (a !== b) return err.textContent = 'Пароли не совпадают';
+      const { error } = await sb.auth.updateUser({ password: a });
+      if (error) return err.textContent = AUTH_ERR[error.message] || error.message;
+      closeModal(); toast('Пароль изменён — ты в аккаунте');
+    };
+  }
+
+  // ---------- приложение для Android ----------
+  function appBanner() {
+    if (!/Android/i.test(navigator.userAgent) || window.YouMusicApp || localStorage.getItem('supAppHidden')) return '';
+    return `<div class="app-ban" id="appBan"><span class="logo-mark"></span><div><b>supMUSIC для Android</b><span>Музыка в фоне, треки в «Загрузки», голосовой поиск</span></div>
+      <a class="btn sm" href="YouMusic.apk" download>${ic('dl')} APK</a><button class="ib" id="appHide" aria-label="Скрыть">${ic('x')}</button></div>`;
+  }
+  function bindAppBanner() {
+    const h = $('#appHide');
+    if (h) h.onclick = () => { localStorage.setItem('supAppHidden', '1'); $('#appBan').remove(); };
+  }
+  // кнопка «Назад» в приложении: закрываем верхнее, что открыто; false — приложение свернётся
+  window.__ymBack = () => {
+    if (!$('#modal').hidden) { closeModal(); return true; }
+    const full = $('#full');
+    if (!full.hidden && full.classList.contains('show-ly')) { full.classList.remove('show-ly'); renderLyMode(); return true; }
+    if (!full.hidden) { full.hidden = true; return true; }
+    if (location.hash && location.hash !== '#/') { location.hash = '#/'; return true; }
+    return false;
+  };
+
+  // ссылка «поделиться»: #/track/<id>
+  async function playById(id) {
+    if (!/^[0-9a-f-]{36}$/.test(id || '')) return;
+    const { data } = await sb.from('sup_tracks').select(COLS).eq('id', id).eq('status', 'ready').maybeSingle();
+    if (data) { setQueue([data], 0); $('#full').hidden = false; } else toast('Трек не найден');
+  }
+
   // ---------- роутер ----------
   async function route() {
-    const [, page, arg] = (location.hash || '#/').split('/');
-    const cur = page === 'playlist' ? 'collection' : (page || 'home');
+    const [, page, argRaw = ''] = (location.hash || '#/').split('/');
+    const arg = argRaw.split('?')[0];
+    const pg = (page || '').split('?')[0];
+    const cur = pg === 'playlist' ? 'collection' : ['search', 'collection', 'create', 'upload'].includes(pg) ? pg : 'home';
     $$('[data-nav]').forEach(a => a.classList.toggle('on', a.dataset.nav === cur));
     view.scrollTop = 0; $('#full').hidden = true; closeModal();
     try {
-      if (page === 'search') await pageSearch();
+      if ((page || '').startsWith('search')) await pageSearch();
       else if (page === 'collection') await pageCollection();
       else if (page === 'playlist') await pagePlaylist(arg);
       else if (page === 'upload') pageUpload();
       else if (page === 'create') pageCreate();
+      else if (page === 'track') { await pageHome(); playById(arg); }
       else await pageHome();
     } catch (e) { view.innerHTML = `<div class="err">Ошибка: ${esc(e.message || e)}</div>`; }
   }
@@ -554,10 +852,19 @@
     await loadUserData(); renderSideUser();
     sb.auth.onAuthStateChange(async (ev, session) => {
       const was = S.user?.id; S.user = session?.user || null;
+      if (ev === 'PASSWORD_RECOVERY') {
+        if ($('#nPass')) return; // форма нового пароля уже открыта
+        await loadUserData(); renderSideUser(); route(); openNewPass(); return;
+      }
       if (was === S.user?.id && ev !== 'SIGNED_OUT') return;
       await loadUserData(); renderSideUser(); route();
     });
     route();
+    if (AUTH_HASH.get('type') === 'recovery' && S.user) openNewPass();
+    else if (AUTH_HASH.get('error_code') || AUTH_HASH.get('error')) {
+      history.replaceState(null, '', location.pathname);
+      toast(/expired|invalid/i.test(AUTH_HASH.get('error_description') || '') ? 'Ссылка из письма устарела — запроси новую' : (AUTH_HASH.get('error_description') || 'Ссылка недействительна'));
+    }
   }
   start();
 })();
