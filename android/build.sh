@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# Сборка APK без Android Studio и Gradle (Ubuntu):
-#   apt install aapt apksigner dalvik-exchange zipalign android-sdk-platform-23 openjdk-17-jdk-headless
-# Подпись: ключ из переменной KEYSTORE (по умолчанию android/youmusic.keystore, в репозиторий не кладётся).
-# Обновлять приложение на телефоне поверх старого можно, только если подписать тем же ключом.
+# Сборка настоящего Android-приложения на Kotlin без Android Studio и Gradle.
+# Нужны: JDK 17+, компилятор Kotlin (kotlinc) и из Android SDK — platform android-34 и build-tools 34
+# (aapt2, d8, zipalign, apksigner). Пути задаются переменными KOTLIN_HOME и ANDROID_SDK.
+# Подпись: ключ android/youmusic.keystore (в репозиторий не кладётся). Обновлять приложение
+# поверх старого можно, только если подписать тем же ключом.
 set -euo pipefail
 cd "$(dirname "$0")"
-ANDROID_JAR=${ANDROID_JAR:-/usr/lib/android-sdk/platforms/android-23/android.jar}
+KOTLIN_HOME=${KOTLIN_HOME:?укажи папку kotlinc}
+SDK=${ANDROID_SDK:?укажи папку с android-34 и build-tools}
+JAR=$SDK/platforms/android-34/android.jar
+BT=$SDK/build-tools/34.0.0
+VERSION_CODE=${VERSION_CODE:-3}
+VERSION_NAME=${VERSION_NAME:-3.0}
 KEYSTORE=${KEYSTORE:-youmusic.keystore}
-OUT=${OUT:-build/YouMusic.apk}
-rm -rf build && mkdir -p build/gen build/classes
+rm -rf build && mkdir -p build/dex
 
-if [ ! -f "$KEYSTORE" ]; then
-  keytool -genkeypair -keystore "$KEYSTORE" -alias youmusic -keyalg RSA -keysize 2048 -validity 36500 \
-    -storepass youmusic -keypass youmusic -dname "CN=YouMusic" -noprompt
-fi
-
-aapt package -f -m -J build/gen -M AndroidManifest.xml -S res -I "$ANDROID_JAR"
-javac --release 8 -nowarn -encoding UTF-8 -classpath "$ANDROID_JAR" -d build/classes \
-  $(find src build/gen -name '*.java')
-dalvik-exchange --dex --output=build/classes.dex build/classes
-aapt package -f -M AndroidManifest.xml -S res -A assets -I "$ANDROID_JAR" -F build/unsigned.apk
-(cd build && aapt add -f unsigned.apk classes.dex >/dev/null)
-zipalign -f 4 build/unsigned.apk build/aligned.apk
-apksigner sign --ks "$KEYSTORE" --ks-pass pass:youmusic --key-pass pass:youmusic --out "$OUT" build/aligned.apk
-apksigner verify "$OUT"
-echo "Готово: $OUT ($(du -h "$OUT" | cut -f1))"
+"$BT/aapt2" compile --dir res -o build/res.zip
+"$BT/aapt2" link -o build/base.apk -I "$JAR" --manifest AndroidManifest.xml build/res.zip \
+  --min-sdk-version 24 --target-sdk-version 34 --version-code "$VERSION_CODE" --version-name "$VERSION_NAME"
+"$KOTLIN_HOME/bin/kotlinc" src -classpath "$JAR" -jvm-target 1.8 -no-reflect -d build/classes.jar 2>&1 | grep -v "^warning" || true
+test -f build/classes.jar
+"$BT/d8" --release --min-api 24 --lib "$JAR" --output build/dex build/classes.jar "$KOTLIN_HOME/lib/kotlin-stdlib.jar"
+cp build/base.apk build/unsigned.apk
+(cd build/dex && zip -q -j ../unsigned.apk classes*.dex)
+"$BT/zipalign" -f 4 build/unsigned.apk build/aligned.apk
+"$BT/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:youmusic --key-pass pass:youmusic --out build/YouMusic.apk build/aligned.apk
+"$BT/apksigner" verify build/YouMusic.apk
+echo "Готово: build/YouMusic.apk ($(du -h build/YouMusic.apk | cut -f1))"
