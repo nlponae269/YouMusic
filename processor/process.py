@@ -206,6 +206,60 @@ def lrc_lines(lyrics):
     return [(t, stamps[i + 1][0] if i + 1 < len(stamps) else t + 5, text) for i, (t, text) in enumerate(stamps)]
 
 
+LYRIC_TOKEN = re.compile(r"\*+|[a-zа-яё]+", re.IGNORECASE)
+
+
+def _norm_word(w):
+    return re.sub(r"[^a-zа-я*]", "", w.lower().replace("ё", "е"))
+
+
+def lyric_cuts(words, lyrics):
+    """Сопоставляет текст песни с распознанными словами Whisper (по соседним словам) и возвращает
+    интервалы запрещённых слов из ТЕКСТА — в том числе тех, что Whisper расслышал иначе или пропустил,
+    и тех, что в тексте уже заменены звёздочками. Работает и для текста без таймкодов."""
+    import difflib
+
+    text = re.sub(r"\[[^\]]*\]", " ", lyrics or "")
+    tokens = LYRIC_TOKEN.findall(text)
+    if not tokens or not words:
+        return []
+    lyr = [_norm_word(t) for t in tokens]
+    star = {i for i, t in enumerate(tokens) if t.startswith("*")}
+    bad = banned_indices(tokens) | star
+    if not bad:
+        return []
+    heard = [_norm_word(w) for _, _, w in words]
+    sm = difflib.SequenceMatcher(None, lyr, heard, autojunk=False)
+    # текст не от этой песни — по нему резать нельзя
+    if sm.ratio() < 0.3:
+        print(f"  Текст плохо совпадает с распознанным ({sm.ratio():.2f}) — сопоставление пропущено", flush=True)
+        return []
+    pos = {}  # номер слова текста → номер слова Whisper (или дробная позиция между ними)
+    for op, i1, i2, j1, j2 in sm.get_opcodes():
+        for i in range(i1, i2):
+            if op == "equal":
+                pos[i] = j1 + (i - i1)
+            elif j2 > j1:  # расслышано иначе: распределяем пропорционально
+                pos[i] = j1 + (i - i1) * (j2 - j1) / (i2 - i1)
+            else:  # Whisper слово пропустил: оно между соседями
+                pos[i] = j1 - 0.5
+    out = []
+    for i in sorted(bad):
+        j = pos.get(i)
+        if j is None:
+            continue
+        if j == int(j) and 0 <= j < len(words):
+            s0, e0 = words[int(j)][0], words[int(j)][1]
+        else:  # между двумя распознанными словами — берём промежуток между ними (не больше 2 с)
+            a = words[max(0, min(len(words) - 1, int(j)))]
+            b = words[max(0, min(len(words) - 1, int(j) + 1))]
+            s0, e0 = (a[1], b[0]) if b[0] > a[1] else (a[0], b[1])
+            if e0 - s0 > 2:
+                s0, e0 = (s0 + e0) / 2 - 1, (s0 + e0) / 2 + 1
+        out.append((s0 - PAD, e0 + PAD))
+    return out
+
+
 def merge(intervals):
     out = []
     for s, e in sorted(intervals):
@@ -262,14 +316,19 @@ def censor_audio(wav, audio, lyrics_src, work):
     bad = [words[i] for i in sorted(banned_indices([w for _, _, w in words]))]
     intervals = [(s - PAD, e + PAD) for s, e, _ in bad]
 
-    # 3. страховка по тексту LRC: если в строке есть запретное слово, а Whisper его не услышал,
-    #    убираем голос на всю строку
+    # 3. сопоставляем текст песни с услышанным: слова, которых Whisper не расслышал
+    #    (быстрый рэп, громкий бит) или которые в тексте уже под звёздочками, тоже вырезаем
+    from_text = lyric_cuts(words, lyrics_src)
+    intervals += from_text
+    # 4. страховка по тексту LRC: запретное слово в строке так и не нашлось — убираем голос на всю строку
     for start, end, text in lrc_lines(lyrics_src):
-        if banned_in(text) and not any(s < end and e > start for s, e in intervals):
+        if (banned_in(text) or "*" in text) and not any(s < end and e > start for s, e in intervals):
             intervals.append((start, end))
     intervals = merge(intervals)
+    if from_text:
+        print(f"  По тексту песни найдено ещё мест: {len(from_text)}", flush=True)
 
-    # 4. на месте запретных слов оставляем только бит
+    # 5. на месте запретных слов оставляем только бит
     if intervals:
         mask = censor_mask(len(audio), intervals)[:, None]
         if stems:
