@@ -288,3 +288,4 @@ em.st{font-style:normal;color:var(--accent)}em.st-failed{color:#ff7b7b}
 .app-ban{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:20px;background:var(--s1);border:1px solid var(--line);margin:0 0 18px}
 .app-ban .logo-mark{width:40px;height:40px;flex-shrink:0}
 .app-ban div{flex:1;min-width:0}.app-ban b{display:block}.app-ban span{color:var(--dim);font-size:13px}
+.card.wait .cv{opacity:.45}.card.wait .go{display:none}.card.wait span{color:var(--accent)}

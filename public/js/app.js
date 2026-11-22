@@ -74,7 +74,17 @@
   function setLikeBtn(b, on) { b.innerHTML = ic(on ? 'heart-on' : 'heart'); b.classList.toggle('on', on); }
 
   // ---------- плеер ----------
-  function setQueue(list, idx) { S.queue = list.slice(); S.qi = idx; playCurrent(); }
+  // трек на перепроверке нейросетью слушать нельзя: старая версия могла быть без новой цензуры
+  const RECHECK = 'rechecking';
+  const isPlayable = t => !!t && (!t.status || t.status === 'ready') && t.error !== RECHECK;
+  const UNAVAILABLE = 'Трек временно недоступен';
+  function setQueue(list, idx) {
+    const t = list[idx];
+    if (t && !isPlayable(t)) return toast(t.error === RECHECK ? UNAVAILABLE + ' — его перепроверяет нейросеть' : 'Трек ещё проверяется нейросетью');
+    const ok = list.filter(isPlayable);
+    if (!ok.length) return toast(UNAVAILABLE);
+    S.queue = ok; S.qi = Math.max(0, ok.indexOf(t)); playCurrent();
+  }
   function playCurrent() {
     const t = S.queue[S.qi]; if (!t) return;
     audio.src = pubUrl('audio', t.audio_path);
@@ -326,7 +336,7 @@
   // волна по треку: сначала этот же исполнитель, потом весь каталог вперемешку
   $('#waveBy').onclick = async () => {
     const t = S.queue[S.qi]; if (!t) return;
-    const pool = await getTracks({ limit: 200 });
+    const pool = (await getTracks({ limit: 200 })).filter(isPlayable);
     const same = shuffleArr(pool.filter(x => x.artist === t.artist && x.id !== t.id));
     const rest = shuffleArr(pool.filter(x => x.artist !== t.artist));
     S.queue = [t, ...same, ...rest]; S.qi = 0; S.shuffle = false; renderPlayer();
@@ -338,8 +348,8 @@
   function rowHtml(t, i, opts = {}) {
     const mine = S.user && (t.owner === S.user.id || S.admin);
     const on = S.likes.has(t.id);
-    const ready = t.status === 'ready' || !t.status;
-    const sub = ready ? esc(t.artist) + (t.genre ? ' · ' + esc(t.genre) : '') + (t.album === AI_ALBUM ? ' <em class="ai">ИИ</em>' : '')
+    const ready = isPlayable(t);
+    const sub = t.error === RECHECK ? `${esc(t.artist)} · <em class="st">${UNAVAILABLE}</em>` : ready ? esc(t.artist) + (t.genre ? ' · ' + esc(t.genre) : '') + (t.album === AI_ALBUM ? ' <em class="ai">ИИ</em>' : '')
       : `<em class="st st-${t.status}">${STATUS[t.status] || ''}${t.status === 'failed' && t.error ? ' — ' + esc(t.error) : ''}</em>`;
     return `<div class="row ${ready ? '' : 'wait'}" data-id="${t.id}" data-i="${i}">
       <div class="cv" data-play>${cover(t)}<div class="go">${ic('play')}</div><div class="eq"><u></u><u></u><u></u></div></div>
@@ -355,9 +365,7 @@
   function bindList(root, tracks, opts = {}) {
     $$('.row', root).forEach(r => {
       const i = +r.dataset.i, t = tracks[i];
-      const playable = !t.status || t.status === 'ready';
-      const ready = tracks.filter(x => !x.status || x.status === 'ready');
-      $$('[data-play]', r).forEach(el => el.onclick = () => playable ? setQueue(ready, ready.indexOf(t)) : toast('Трек ещё проверяется нейросетью'));
+      $$('[data-play]', r).forEach(el => el.onclick = () => setQueue(tracks, i));
       $('[data-like]', r).onclick = () => toggleLike(t.id);
       $('[data-add]', r).onclick = () => addToPlaylist(t);
       const del = $('[data-del]', r);
@@ -375,7 +383,7 @@
     markNow();
   }
   function shelfHtml(tracks) {
-    return `<div class="shelf">${tracks.map((t, i) => `<div class="card" data-i="${i}"><div class="cv">${cover(t)}<span class="go">${ic('play')}</span></div><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></div>`).join('')}</div>`;
+    return `<div class="shelf">${tracks.map((t, i) => `<div class="card ${isPlayable(t) ? '' : 'wait'}" data-i="${i}"><div class="cv">${cover(t)}<span class="go">${ic('play')}</span></div><b>${esc(t.title)}</b><span>${isPlayable(t) ? esc(t.artist) : UNAVAILABLE}</span></div>`).join('')}</div>`;
   }
   function bindShelf(root, tracks) { $$('.card', root).forEach(c => c.onclick = () => setQueue(tracks, +c.dataset.i)); }
 
@@ -446,7 +454,7 @@
       ${fresh.length ? `<h2>Новое</h2><div id="fresh">${shelfHtml(fresh)}</div><h2>Все треки</h2><div id="all">${listHtml(fresh)}</div>`
         : '<div class="empty">В каталоге пока нет треков. Загрузи первый — вкладка «Загрузить».</div>'}`;
     $('#waveBtn').onclick = async () => {
-      const pool = shuffleArr(await getTracks({ limit: 200 }));
+      const pool = shuffleArr((await getTracks({ limit: 200 })).filter(isPlayable));
       if (!pool.length) return toast('Каталог пока пуст');
       S.shuffle = true; setQueue(pool, 0);
     };
@@ -516,7 +524,7 @@
     bindList(box, tracks, { remove: async t => {
       await sb.from('sup_playlist_tracks').delete().eq('playlist_id', id).eq('track_id', t.id); pagePlaylist(id);
     } });
-    $('#plPlay').onclick = () => tracks.length && setQueue(tracks, 0);
+    $('#plPlay').onclick = () => { const ok = tracks.filter(isPlayable); if (ok.length) setQueue(ok, 0); else toast(UNAVAILABLE); };
     $('#plDel').onclick = async () => {
       if (!confirm('Удалить плейлист?')) return;
       await sb.from('sup_playlists').delete().eq('id', id);

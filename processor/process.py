@@ -472,6 +472,9 @@ def mark_checked(tid):
     save_state(state)
 
 
+RECHECKING = "rechecking"  # пометка в error: трек перепроверяется, слушать пока нельзя
+
+
 def recensor(limit=10):
     """Словарь изменился — перепроверяем уже опубликованные треки: вырезаем новые слова
     из звука и прячем их в названии и тексте."""
@@ -479,7 +482,12 @@ def recensor(limit=10):
     done = set(state.get("checked", [])) if state.get("version") == WORDS_VERSION else set()
     rows = db("GET", "sup_tracks?select=id,owner,title,artist,album,lyrics,audio_path,censored&status=eq.ready"
                      "&audio_path=not.is.null&order=published_at.asc") or []
-    todo = [t for t in rows if t["id"] not in done][:limit]
+    waiting = [t for t in rows if t["id"] not in done]
+    # пока трек не перепроверен, старую версию не отдаём: на сайте он «временно недоступен»
+    for i in range(0, len(waiting), 100):
+        ids = ",".join(t["id"] for t in waiting[i:i + 100])
+        db("PATCH", f"sup_tracks?id=in.({ids})", {"error": RECHECKING})
+    todo = waiting[:limit]
     for t in todo:
         print(f"Перепроверка по новому словарю: «{t['artist']} — {t['title']}»", flush=True)
         work = Path(tempfile.mkdtemp(prefix="ym-re-"))
@@ -494,7 +502,7 @@ def recensor(limit=10):
             lyrics, n4 = censor_text(t.get("lyrics") or "")
             # строки текста с новыми запретными словами тоже идут в страховку по LRC
             audio, intervals, _ = censor_audio(wav, audio, t.get("lyrics") or "", work)
-            patch = {"title": title, "artist": artist, "album": album or None, "lyrics": lyrics or None}
+            patch = {"title": title, "artist": artist, "album": album or None, "lyrics": lyrics or None, "error": None}
             if intervals:
                 # новое имя файла, чтобы браузеры не взяли старую версию из кэша
                 key = f"{t['owner']}/{t['id']}-v{WORDS_VERSION}.mp3"
@@ -509,7 +517,9 @@ def recensor(limit=10):
                 storage_delete("audio", [t["audio_path"]])
             print(f"  ✓ готово: вырезано ещё {len(intervals)}, в названии/тексте скрыто {n1 + n2 + n3 + n4}", flush=True)
         except Exception:  # noqa: BLE001
+            # трек остаётся «временно недоступен» и перепроверяется в следующий запуск
             traceback.print_exc()
+            continue
         finally:
             shutil.rmtree(work, ignore_errors=True)
         done.add(t["id"])
